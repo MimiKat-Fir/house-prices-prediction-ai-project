@@ -1,37 +1,54 @@
 # House Prices Prediction AI Project
 
-Proyecto de Machine Learning no supervisado / análisis de datos para trabajar en equipo sobre predicción de precios de viviendas.
+Proyecto colaborativo de Machine Learning para analizar datos de viviendas y construir un modelo de prediccion de precios.
+
+## Estructura del repositorio
+
+```text
+.
+├── data/
+│   ├── train.csv
+│   ├── test.csv
+│   ├── sample_submission.csv
+│   └── data_description.txt
+├── notebooks/
+│   └── house-prices-prediction-using-tfdf_our_notebook.ipynb
+├── .gitignore
+└── README.md
+```
 
 ## Archivos principales
 
-- `house-prices-prediction-using-tfdf_our_notebook.ipynb`: notebook principal del proyecto.
-- `train.csv`: dataset de entrenamiento usado por el notebook.
+- `data/train.csv`: datos de entrenamiento.
+- `data/test.csv`: datos para generar predicciones.
+- `data/sample_submission.csv`: formato esperado para la entrega.
+- `data/data_description.txt`: descripcion de las variables del dataset.
+- `notebooks/house-prices-prediction-using-tfdf_our_notebook.ipynb`: notebook principal del proyecto.
 
-## Cómo empezar
+## Como empezar
 
-1. Clona el repositorio:
+Clona el repositorio:
 
-   ```bash
-   git clone https://github.com/MimiKat-Fir/house-prices-prediction-ai-project.git
-   ```
+```bash
+git clone https://github.com/MimiKat-Fir/house-prices-prediction-ai-project.git
+cd house-prices-prediction-ai-project
+```
 
-2. Entra en la carpeta:
+Abre el notebook desde Jupyter, VS Code o Google Colab:
 
-   ```bash
-   cd house-prices-prediction-ai-project
-   ```
-
-3. Abre el notebook con Jupyter, VS Code o Google Colab.
+```text
+notebooks/house-prices-prediction-using-tfdf_our_notebook.ipynb
+```
 
 ## Flujo recomendado para trabajar en equipo
 
-Antes de empezar a cambiar cosas:
+Antes de empezar a cambiar archivos:
 
 ```bash
 git pull
 ```
 
-Después de hacer cambios:
+Despues de hacer cambios:
 
 ```bash
 git status
@@ -40,4 +57,9 @@ git commit -m "Describe los cambios"
 git push
 ```
 
-Si varias personas editan el mismo notebook a la vez, pueden aparecer conflictos. Lo mejor es repartirse tareas y avisar antes de modificar el notebook principal.
+## Recomendaciones
+
+- Evitad editar el mismo notebook al mismo tiempo para reducir conflictos.
+- Si alguien va a hacer cambios grandes, avisad al grupo antes.
+- Guardad nuevos notebooks dentro de `notebooks/`.
+- Guardad nuevos datasets o archivos de entrada dentro de `data/`.
