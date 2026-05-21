@@ -6,15 +6,16 @@ Proyecto colaborativo de Machine Learning para analizar datos de viviendas y con
 
 ```text
 .
-├── data/
-│   ├── train.csv
-│   ├── test.csv
-│   ├── sample_submission.csv
-│   └── data_description.txt
-├── notebooks/
-│   └── house-prices-prediction-using-tfdf_our_notebook.ipynb
-├── .gitignore
-└── README.md
+|-- data/
+|   |-- train.csv
+|   |-- test.csv
+|   |-- sample_submission.csv
+|   `-- data_description.txt
+|-- notebooks/
+|   `-- house-prices-prediction-using-tfdf_our_notebook.ipynb
+|-- .gitignore
+|-- requirements.txt
+`-- README.md
 ```
 
 ## Archivos principales
@@ -34,11 +35,25 @@ git clone https://github.com/MimiKat-Fir/house-prices-prediction-ai-project.git
 cd house-prices-prediction-ai-project
 ```
 
-Abre el notebook desde Jupyter, VS Code o Google Colab:
+### Entorno recomendado en Anaconda Prompt
+
+El notebook esta preparado para ejecutarse localmente con Python 3.11 y el kernel de Jupyter llamado `math`.
+
+```bash
+conda create -n math python=3.11 -y
+conda activate math
+pip install -r requirements.txt
+python -m ipykernel install --user --name math --display-name math
+jupyter lab
+```
+
+Abre el notebook desde Jupyter o VS Code y selecciona el kernel `math`:
 
 ```text
 notebooks/house-prices-prediction-using-tfdf_our_notebook.ipynb
 ```
+
+Nota: TensorFlow Decision Forests no tiene paquete pip nativo para Windows. Por compatibilidad con Anaconda Prompt en Windows, el notebook usa `scikit-learn` con `RandomForestRegressor`.
 
 ## Flujo recomendado para trabajar en equipo
 
