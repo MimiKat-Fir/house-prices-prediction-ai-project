@@ -1,11 +1,14 @@
-# %% [markdown]
-# # House Prices Prediction
+# -*- coding: utf-8 -*-
+"""
+Created on Mon May 25 19:24:24 2026
 
-# %% [markdown]
-# ## Import libraries
-# 
+@author: firas, sueda, emir
 
-# %%
+#  House Prices Prediction
+"""
+
+# Import libraries
+
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -33,12 +36,7 @@ import xgboost as xgb
 RANDOM_STATE = 42
 sns.set_theme(style="whitegrid")
 
-
-# %% [markdown]
-# ## Load the dataset
-# 
-
-# %%
+# %% Load the dataset
 PROJECT_ROOT = Path.cwd()
 PROJECT_ROOT = PROJECT_ROOT.parent
 
@@ -49,47 +47,15 @@ TEST_PATH = DATA_DIR / "test.csv"
 SAMPLE_SUBMISSION_PATH = DATA_DIR / "sample_submission.csv"
 
 
+dataset_old_df = pd.read_csv(TRAIN_OLD_PATH)
 dataset_df = pd.read_csv(TRAIN_PATH)
-print(f"Full train dataset shape is {dataset_df.shape}")
-
-# %% [markdown]
-# ### Cleaning the dataset (from Data_Analyze)
-# 
-
-# %% [markdown]
-# We will drop the `Id` column as it is not necessary for model training.
-
-# %%
-dataset_df = dataset_df.drop(columns="Id")
-dataset_df.head(3)
 
 
-# %%
-dataset_df.info()
+print(f"Deafult Dataset shape is {dataset_old_df.shape}")
+print(f"Cleaned Dataset shape is {dataset_df.shape}")
 
-# %% [markdown]
-# ### Visualization of the numerical data
-# 
+# %%  Train Data
 
-# %%
-df_num = dataset_df.select_dtypes(include = ['float64', 'int64'])
-df_num.head()
-
-# %% [markdown]
-# Now let us plot the distribution for all the numerical features.
-
-# %%
-df_num.hist(figsize=(16, 20), bins=50, xlabelsize=8, ylabelsize=8);
-
-# %% [markdown]
-# ### Categorical vs Numerical
-
-
-
-# %% [markdown]
-# ### Prepare the (train / test) data
-
-# %%
 X = dataset_df.drop(columns="SalePrice")
 y = dataset_df["SalePrice"]
 
@@ -104,17 +70,18 @@ print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
 print(f"Validation set: {len(X_test)} samples")
 
 
-# %%
+# %% Numerical vs Categorical 
+
 numeric_features = X_train.select_dtypes(include=["int64", "float64"]).columns.tolist()
-categorical_features = X_train.select_dtypes(include=["object"]).columns.tolist()
+categorical_features = X_train.select_dtypes(include=["object", "string"]).columns.tolist()
 
 print(f"Numeric features: {len(numeric_features)}")
 print(f"Numeric features: {len(categorical_features)}")
 
-# %% Data Clean
+# %% Data Transformation
 
 # Now we have to separate the ordinal from pure categorical
-# These are categorical but have a logical order
+
 ordinal_features = [
       "Street",
       "Alley",
@@ -142,13 +109,13 @@ ordinal_features = [
       "Fence",
 ]
 
-  # Everything categorical but NOT ordinal -> one-hot
+  # NOT ordinal -> one-hot
+  
 onehot_features = [
       col for col in categorical_features
       if col not in ordinal_features
 ]
 
-# %% Preparing data for transformation
 
 quality_order = ["Po", "Fa", "TA", "Gd", "Ex"]
 quality_order_with_none = ["None", "Po", "Fa", "TA", "Gd", "Ex"]
@@ -223,6 +190,37 @@ preprocessor = ColumnTransformer(
 print(f"Ordinal categorical features: {len(ordinal_features)}")
 print(f"One-hot categorical features: {len(onehot_features)}")
 
+# %% Visualization of the cleaned, transformed data
+
+X_train_transformed = preprocessor.fit_transform(X_train)
+X_test_transformed = preprocessor.transform(X_test)
+
+print("Original X_train shape:", X_train.shape)
+print("Transformed X_train shape:", X_train_transformed.shape)
+print("Original X_test shape:", X_test.shape)
+print("Transformed X_test shape:", X_test_transformed.shape)
+
+print("Missing values before transformation:", X_train.isnull().sum().sum())
+
+if hasattr(X_train_transformed, "data"):
+    missing_after = np.isnan(X_train_transformed.data).sum()
+else:
+    missing_after = np.isnan(X_train_transformed).sum()
+
+print("Missing values after transformation:", missing_after)
+
+feature_names = preprocessor.get_feature_names_out()
+print("Number of transformed features:", len(feature_names))
+
+X_train_transformed_preview = pd.DataFrame(
+    X_train_transformed[:5].toarray()
+    if hasattr(X_train_transformed, "toarray")
+    else X_train_transformed[:5],
+    columns=feature_names,
+)
+
+X_train_transformed_preview.head()
+
 
 # %% Model F
 # Simple regression tournament.
@@ -252,7 +250,8 @@ model_f_candidates = {
     ),
 }
 
-# %%
+# %% Preparing the results of every model
+
 model_f_results = []
 model_f_trained = {}
 
