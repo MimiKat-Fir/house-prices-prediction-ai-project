@@ -39,9 +39,6 @@ sns.set_theme(style="whitegrid")
 # 
 
 # %%
-TRAIN_PATH
-
-# %%
 PROJECT_ROOT = Path.cwd()
 PROJECT_ROOT = PROJECT_ROOT.parent
 
@@ -114,10 +111,9 @@ categorical_features = X_train.select_dtypes(include=["object"]).columns.tolist(
 print(f"Numeric features: {len(numeric_features)}")
 print(f"Numeric features: {len(categorical_features)}")
 
-# %% [markdown]
-# Now we have to separate the ordinal from pure categorical
+# %% Data Clean
 
-# %%
+# Now we have to separate the ordinal from pure categorical
 # These are categorical but have a logical order
 ordinal_features = [
       "Street",
@@ -152,7 +148,8 @@ onehot_features = [
       if col not in ordinal_features
 ]
 
-# %%
+# %% Preparing data for transformation
+
 quality_order = ["Po", "Fa", "TA", "Gd", "Ex"]
 quality_order_with_none = ["None", "Po", "Fa", "TA", "Gd", "Ex"]
 
@@ -189,7 +186,8 @@ ordinal_categories = [
       ["None", "MnWw", "GdWo", "MnPrv", "GdPrv"], # Fence
 ]
 
-# %%
+# %% Data transforming
+
 numeric_transformer = Pipeline(
       steps=[
           ("imputer", SimpleImputer(strategy="median"))
@@ -222,139 +220,13 @@ preprocessor = ColumnTransformer(
       ]
 )
 
-# %%
 print(f"Ordinal categorical features: {len(ordinal_features)}")
 print(f"One-hot categorical features: {len(onehot_features)}")
 
 
-
-# %% [markdown]
-# ## Model E (Lineal Regression)
-
-# %%
-forest = rf_model.named_steps["model"]
-first_tree = forest.estimators_[0]
-
-print(f"Number of trees: {len(forest.estimators_)}")
-print(f"First tree depth: {first_tree.get_depth()}")
-print(f"First tree leaves: {first_tree.get_n_leaves()}")
-
-
-# %% [markdown]
-# ### Evaluate the model on the validation dataset
-# 
-
-# %%
-valid_predictions = rf_model.predict(X_valid)
-
-rmse = np.sqrt(mean_squared_error(y_valid, valid_predictions))
-mae = mean_absolute_error(y_valid, valid_predictions)
-r2 = r2_score(y_valid, valid_predictions)
-rmsle = np.sqrt(
-    mean_squared_error(
-        np.log1p(y_valid),
-        np.log1p(np.maximum(valid_predictions, 0)),
-    )
-)
-
-metrics = pd.Series(
-    {
-        "RMSE": rmse,
-        "MAE": mae,
-        "RMSLE": rmsle,
-        "R2": r2,
-    }
-)
-metrics.round(4)
-
-
-# %% [markdown]
-# We can also inspect the prediction errors visually.
-# 
-
-# %%
-residuals = y_valid - valid_predictions
-
-fig, axes = plt.subplots(1, 2, figsize=(13, 4))
-sns.scatterplot(x=y_valid, y=valid_predictions, ax=axes[0])
-axes[0].plot([y_valid.min(), y_valid.max()], [y_valid.min(), y_valid.max()], color="red", linestyle="--")
-axes[0].set_title("Actual vs predicted SalePrice")
-axes[0].set_xlabel("Actual SalePrice")
-axes[0].set_ylabel("Predicted SalePrice")
-
-sns.histplot(residuals, kde=True, ax=axes[1])
-axes[1].set_title("Validation residuals")
-axes[1].set_xlabel("Actual - predicted")
-
-plt.tight_layout()
-plt.show()
-
-
-# %% [markdown]
-# Now, let us print the validation metrics clearly.
-# 
-
-# %%
-for name, value in metrics.items():
-    print(f"{name}: {value:,.4f}")
-
-
-# %% [markdown]
-# ### Variable importances
-# 
-# Permutation importance measures how much validation performance drops when a feature is randomly shuffled. This works directly with the full pipeline and avoids fragile model-specific TensorFlow code.
-# 
-
-# %%
-importance_result = permutation_importance(
-    rf_model,
-    X_valid,
-    y_valid,
-    n_repeats=10,
-    random_state=RANDOM_STATE,
-    n_jobs=-1,
-)
-
-feature_importance_df = pd.DataFrame(
-    {
-        "feature": X_valid.columns,
-        "importance_mean": importance_result.importances_mean,
-        "importance_std": importance_result.importances_std,
-    }
-).sort_values("importance_mean", ascending=False)
-
-feature_importance_df.head(15)
-
-
-# %% [markdown]
-# The table above is sorted from the most useful original input feature to the least useful for this validation split.
-# 
-
-# %%
-feature_importance_df.head(20)
-
-
-# %% [markdown]
-# Plot the top variable importances using Matplotlib.
-# 
-
-# %%
-top_features = feature_importance_df.head(20).sort_values("importance_mean")
-
-plt.figure(figsize=(10, 7))
-plt.barh(top_features["feature"], top_features["importance_mean"])
-plt.xlabel("Mean permutation importance")
-plt.title("Top 20 feature importances")
-plt.tight_layout()
-plt.show()
-
-
-# %% [markdown]
-# ## Model F
+# %% Model F
 # Simple regression tournament.
-# 
 
-# %%
 model_f_candidates = {
     "Decision Tree": DecisionTreeRegressor(random_state=RANDOM_STATE),
     "KNN": KNeighborsRegressor(n_neighbors=5),
@@ -393,13 +265,13 @@ for name, model in model_f_candidates.items():
     )
 
     candidate.fit(X_train, y_train)
-    preds = candidate.predict(X_valid)
+    preds = candidate.predict(X_test)
     preds = np.maximum(preds, 0)
 
-    rmse = np.sqrt(mean_squared_error(y_valid, preds))
-    rmsle = np.sqrt(mean_squared_error(np.log1p(y_valid), np.log1p(preds)))
-    mae = mean_absolute_error(y_valid, preds)
-    r2 = r2_score(y_valid, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+    rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+    mae = mean_absolute_error(y_test, preds)
+    r2 = r2_score(y_test, preds)
 
     model_f_results.append(
         {
@@ -429,24 +301,25 @@ model_f_df
 # 
 
 # %%
-test_data = pd.read_csv(TEST_PATH)
-submission = pd.read_csv(SAMPLE_SUBMISSION_PATH)
 
-ids = test_data.pop("Id")
-test_predictions = rf_model.predict(test_data)
+# test_data = pd.read_csv(TEST_PATH)
+# submission = pd.read_csv(SAMPLE_SUBMISSION_PATH)
 
-submission["Id"] = ids
-submission["SalePrice"] = test_predictions
+# ids = test_data.pop("Id")
+# test_predictions = rf_model.predict(test_data)
 
-output_path = PROJECT_ROOT / "submission.csv"
-submission.to_csv(output_path, index=False)
+# submission["Id"] = ids
+# submission["SalePrice"] = test_predictions
 
-print(f"Saved submission to: {output_path}")
-submission.head()
+# output_path = PROJECT_ROOT / "submission.csv"
+# submission.to_csv(output_path, index=False)
+
+# print(f"Saved submission to: {output_path}")
+# submission.head()
 
 
 # %%
-submission.describe()
+# submission.describe()
 
 
 
