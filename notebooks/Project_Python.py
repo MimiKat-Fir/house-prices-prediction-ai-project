@@ -37,6 +37,7 @@ RANDOM_STATE = 42
 sns.set_theme(style="whitegrid")
 
 # %% Load the dataset
+
 PROJECT_ROOT = Path.cwd()
 PROJECT_ROOT = PROJECT_ROOT.parent
 
@@ -46,9 +47,13 @@ TRAIN_PATH = DATA_DIR / "train_cleaned.csv"
 TEST_PATH = DATA_DIR / "test.csv"
 SAMPLE_SUBMISSION_PATH = DATA_DIR / "sample_submission.csv"
 
+# %% Clean 
 
 dataset_old_df = pd.read_csv(TRAIN_OLD_PATH)
 dataset_df = pd.read_csv(TRAIN_PATH)
+
+dataset_old_df = dataset_old_df.drop(columns=["Id"])
+dataset_df = dataset_df.drop(columns=["Id"])
 
 
 print(f"Deafult Dataset shape is {dataset_old_df.shape}")
@@ -153,7 +158,7 @@ ordinal_categories = [
       ["None", "MnWw", "GdWo", "MnPrv", "GdPrv"], # Fence
 ]
 
-# %% Data transforming
+# Data transforming
 
 numeric_transformer = Pipeline(
       steps=[
@@ -284,41 +289,36 @@ for name, model in model_f_candidates.items():
     model_f_trained[name] = candidate
 
 model_f_df = pd.DataFrame(model_f_results).sort_values("RMSLE")
-model_f_df
-
-# %% [markdown]
-# ## Model S
-
-# %% [markdown]
-# ## Inspect models accuracy
-# 
-
-# %% [markdown]
-# # Submission
-# 
-# Finally, predict on the competition test data using the local `data/test.csv` file and save a Kaggle-compatible submission file in the project root.
-# 
-
-# %%
-
-# test_data = pd.read_csv(TEST_PATH)
-# submission = pd.read_csv(SAMPLE_SUBMISSION_PATH)
-
-# ids = test_data.pop("Id")
-# test_predictions = rf_model.predict(test_data)
-
-# submission["Id"] = ids
-# submission["SalePrice"] = test_predictions
-
-# output_path = PROJECT_ROOT / "submission.csv"
-# submission.to_csv(output_path, index=False)
-
-# print(f"Saved submission to: {output_path}")
-# submission.head()
 
 
-# %%
-# submission.describe()
+# %% Inspect models accuracy
+ 
+
+# %% Submissions
+
+test_data = pd.read_csv(TEST_PATH)
+submission = pd.read_csv(SAMPLE_SUBMISSION_PATH)
+
+ids = test_data.pop("Id")
+test_data["MSSubClass"] = test_data["MSSubClass"].astype(str)
+
+best_model_name = model_f_df.iloc[0]["model"]
+best_model = model_f_trained[best_model_name]
+
+test_predictions = best_model.predict(test_data)
+test_predictions = np.maximum(test_predictions, 0)
+
+submission["Id"] = ids
+submission["SalePrice"] = test_predictions
+
+output_path = PROJECT_ROOT / "submission.csv"
+submission.to_csv(output_path, index=False)
+
+print(f"Best model used: {best_model_name}")
+print("Saved submission")
+submission.head()
+
+submission.describe()
 
 
 
