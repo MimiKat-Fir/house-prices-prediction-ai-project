@@ -87,6 +87,26 @@ df_num.hist(figsize=(16, 20), bins=50, xlabelsize=8, ylabelsize=8);
 # %% [markdown]
 # ### Categorical vs Numerical
 
+
+
+# %% [markdown]
+# ### Prepare the (train / test) data
+
+# %%
+X = dataset_df.drop(columns="SalePrice")
+y = dataset_df["SalePrice"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.1,
+    random_state=RANDOM_STATE,
+)
+
+print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
+print(f"Validation set: {len(X_test)} samples")
+
+
 # %%
 numeric_features = X_train.select_dtypes(include=["int64", "float64"]).columns.tolist()
 categorical_features = X_train.select_dtypes(include=["object"]).columns.tolist()
@@ -206,22 +226,6 @@ preprocessor = ColumnTransformer(
 print(f"Ordinal categorical features: {len(ordinal_features)}")
 print(f"One-hot categorical features: {len(onehot_features)}")
 
-# %% [markdown]
-# ### Prepare the (train / test) data
-
-# %%
-X = dataset_df.drop(columns="SalePrice")
-y = dataset_df["SalePrice"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.1,
-    random_state=RANDOM_STATE,
-)
-
-print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
-print(f"Validation set: {len(X_test)} samples")
 
 
 # %% [markdown]
