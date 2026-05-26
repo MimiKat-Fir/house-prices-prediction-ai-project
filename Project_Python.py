@@ -610,7 +610,7 @@ for name in best_models_c:
         steps=[
             ("preprocess", preprocessor),
             ("scaler", StandardScaler()),
-            ("model", clone(model_a_trained[name]))  # Fresh copy with same params
+            ("model", clone(model_b_trained[name]))  # Fresh copy with same params
         ]
     )
     pipeline.fit(X0, y)  # Train with all data
