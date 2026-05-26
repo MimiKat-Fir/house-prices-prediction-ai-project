@@ -12,3 +12,5 @@ Thumbs.db
 *.log
 
 submission.csv
+submissions/
+submission_*.csv

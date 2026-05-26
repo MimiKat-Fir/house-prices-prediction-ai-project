@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Created on Mon May 25 19:24:24 2026
 
@@ -10,47 +10,43 @@ Created on Mon May 25 19:24:24 2026
 # Import libraries
 
 from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import xgboost as xgb
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
     AdaBoostRegressor,
     GradientBoostingRegressor,
-    RandomForestRegressor,
-)
+    RandomForestRegressor,)
 from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
 from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
 
-import xgboost as xgb
 
 RANDOM_STATE = 42
 sns.set_theme(style="whitegrid")
 
 # %% Load the dataset
 
-PROJECT_ROOT = Path.cwd()
-PROJECT_ROOT = PROJECT_ROOT.parent
+project_root = Path(__file__).resolve().parent
 
-DATA_DIR = PROJECT_ROOT / "data"
-TRAIN_OLD_PATH = DATA_DIR / "train.csv"
-TRAIN_PATH = DATA_DIR / "train_cleaned.csv"
-TEST_PATH = DATA_DIR / "test.csv"
-SAMPLE_SUBMISSION_PATH = DATA_DIR / "sample_submission.csv"
+train_old_path = project_root / "data" / "train.csv"
+train_path = project_root / "data" / "train_cleaned.csv"
+test_path = project_root / "data" / "test.csv"
+
 
 # %% Clean 
 
-dataset_old_df = pd.read_csv(TRAIN_OLD_PATH)
-dataset_df = pd.read_csv(TRAIN_PATH)
+dataset_old_df = pd.read_csv(train_old_path)
+dataset_df = pd.read_csv(train_path)
 
 dataset_old_df = dataset_old_df.drop(columns=["Id"])
 dataset_df = dataset_df.drop(columns=["Id"])
@@ -59,26 +55,11 @@ dataset_df = dataset_df.drop(columns=["Id"])
 print(f"Deafult Dataset shape is {dataset_old_df.shape}")
 print(f"Cleaned Dataset shape is {dataset_df.shape}")
 
-# %%  Train Data
-
-X = dataset_df.drop(columns="SalePrice")
-y = dataset_df["SalePrice"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.1,
-    random_state=RANDOM_STATE,
-)
-
-print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
-print(f"Validation set: {len(X_test)} samples")
-
 
 # %% Numerical vs Categorical 
 
-numeric_features = X_train.select_dtypes(include=["int64", "float64"]).columns.tolist()
-categorical_features = X_train.select_dtypes(include=["object", "string"]).columns.tolist()
+numeric_features = dataset_df.drop(columns=["SalePrice"]).select_dtypes(include=["int64", "float64"]).columns.tolist()
+categorical_features = dataset_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
 print(f"Numeric features: {len(numeric_features)}")
 print(f"Numeric features: {len(categorical_features)}")
@@ -86,7 +67,6 @@ print(f"Numeric features: {len(categorical_features)}")
 # %% Data Transformation
 
 # Now we have to separate the ordinal from pure categorical
-
 ordinal_features = [
       "Street",
       "Alley",
@@ -114,8 +94,7 @@ ordinal_features = [
       "Fence",
 ]
 
-  # NOT ordinal -> one-hot
-  
+# NOT ordinal -> one-hot (all the other categorical)  
 onehot_features = [
       col for col in categorical_features
       if col not in ordinal_features
@@ -131,34 +110,41 @@ ordinal_categories = [
       ["IR3", "IR2", "IR1", "Reg"],              # LotShape
       ["ELO", "NoSeWa", "NoSewr", "AllPub"],     # Utilities
       ["Sev", "Mod", "Gtl"],                     # LandSlope
-
       quality_order,                             # ExterQual
       quality_order,                             # ExterCond
       quality_order_with_none,                   # BsmtQual
       quality_order_with_none,                   # BsmtCond
-
       ["None", "No", "Mn", "Av", "Gd"],          # BsmtExposure
       ["None", "Unf", "LwQ", "Rec", "BLQ", "ALQ", "GLQ"],  # BsmtFinType1
       ["None", "Unf", "LwQ", "Rec", "BLQ", "ALQ", "GLQ"],  # BsmtFinType2
-
       quality_order,                             # HeatingQC
       ["N", "Y"],                                # CentralAir
       ["Mix", "FuseP", "FuseF", "FuseA", "SBrkr"], # Electrical
       quality_order,                             # KitchenQual
-
       ["Sal", "Sev", "Maj2", "Maj1", "Mod", "Min2", "Min1", "Typ"], # Functional
-
       quality_order_with_none,                   # FireplaceQu
       ["None", "Unf", "RFn", "Fin"],             # GarageFinish
       quality_order_with_none,                   # GarageQual
       quality_order_with_none,                   # GarageCond
-
       ["N", "P", "Y"],                           # PavedDrive
       ["None", "Fa", "TA", "Gd", "Ex"],          # PoolQC
       ["None", "MnWw", "GdWo", "MnPrv", "GdPrv"], # Fence
 ]
 
 # Data transforming
+    # 1. numeric_transformer:
+    #    Missing values -> median
+    # 2. ordinal_transformer:
+    #    Missing values -> "None", categories -> ordered numbers
+    #    Example: [None < Po < Fa < TA < Gd < Ex] -> [0,1,2,3,4,5]
+    # 3. onehot_transformer:
+    #    Missing values -> frequent value , Then 1Hot
+    
+    #    preprocessor:
+    #    Combines all transformations in one object:
+    #    - numeric_features use numeric_transformer
+    #    - ordinal_features use ordinal_transformer
+    #    - onehot_features use onehot_transformer
 
 numeric_transformer = Pipeline(
       steps=[
@@ -184,53 +170,54 @@ onehot_transformer = Pipeline(
       ]
 )
 
+# ColumnTransformer: to apply tranformations to every column differently
 preprocessor = ColumnTransformer(
       transformers=[
           ("num", numeric_transformer, numeric_features),
           ("ord", ordinal_transformer, ordinal_features),
           ("cat", onehot_transformer, onehot_features),
-      ]
+      ],
+      sparse_threshold=0
 )
 
 print(f"Ordinal categorical features: {len(ordinal_features)}")
 print(f"One-hot categorical features: {len(onehot_features)}")
 
-# %% Visualization of the cleaned, transformed data
+# %% Cleaned, transformed data
 
-X_train_transformed = preprocessor.fit_transform(X_train)
-X_test_transformed = preprocessor.transform(X_test)
+X0 = dataset_df.drop(columns="SalePrice")
+y = dataset_df["SalePrice"]
+X1 = preprocessor.fit_transform(X0)
 
-print("Original X_train shape:", X_train.shape)
-print("Transformed X_train shape:", X_train_transformed.shape)
-print("Original X_test shape:", X_test.shape)
-print("Transformed X_test shape:", X_test_transformed.shape)
+print("Original cleaned data shape:", X0.shape)
+print("Transformed data shape:", X1.shape)
+print("Missing values before transformation:", X0.isnull().sum().sum())
+print("Missing values after transformation:", np.isnan(X1).sum())
 
-print("Missing values before transformation:", X_train.isnull().sum().sum())
 
-if hasattr(X_train_transformed, "data"):
-    missing_after = np.isnan(X_train_transformed.data).sum()
-else:
-    missing_after = np.isnan(X_train_transformed).sum()
+# %% Normalization of the transformed data
 
-print("Missing values after transformation:", missing_after)
+scaler = StandardScaler()
+X = scaler.fit_transform(X1)
 
-feature_names = preprocessor.get_feature_names_out()
-print("Number of transformed features:", len(feature_names))
+print("Normalized X shape:", X.shape)
+print("Missing values after normalization:", np.isnan(X).sum())
 
-X_train_transformed_preview = pd.DataFrame(
-    X_train_transformed[:5].toarray()
-    if hasattr(X_train_transformed, "toarray")
-    else X_train_transformed[:5],
-    columns=feature_names,
+# %%  Train Data
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=RANDOM_STATE,
 )
 
-X_train_transformed_preview.head()
+print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
+print(f"Validation set: {len(X_test)} samples")
 
+# %% Models A (basic)
 
-# %% Model F
-# Simple regression tournament.
-
-model_f_candidates = {
+model_a_candidates = {
     "Decision Tree": DecisionTreeRegressor(random_state=RANDOM_STATE),
     "KNN": KNeighborsRegressor(n_neighbors=5),
     "SVR": SVR(),
@@ -244,7 +231,7 @@ model_f_candidates = {
         n_estimators=100,
         random_state=RANDOM_STATE,
     ),
-    "Gradient Boosting": GradientBoostingRegressor(random_state=RANDOM_STATE),
+    "Gradient_Boosting": GradientBoostingRegressor(random_state=RANDOM_STATE),
     "XGBoost":xgb.XGBRegressor(
     n_estimators=300,
     max_depth=3,
@@ -255,21 +242,12 @@ model_f_candidates = {
     ),
 }
 
-# %% Preparing the results of every model
+model_a_results = []
+model_a_trained = {}
 
-model_f_results = []
-model_f_trained = {}
-
-for name, model in model_f_candidates.items():
-    candidate = Pipeline(
-        steps=[
-            ("preprocess", preprocessor),
-            ("model", model),
-        ]
-    )
-
-    candidate.fit(X_train, y_train)
-    preds = candidate.predict(X_test)
+for name, model in model_a_candidates.items():
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
     preds = np.maximum(preds, 0)
 
     rmse = np.sqrt(mean_squared_error(y_test, preds))
@@ -277,48 +255,45 @@ for name, model in model_f_candidates.items():
     mae = mean_absolute_error(y_test, preds)
     r2 = r2_score(y_test, preds)
 
-    model_f_results.append(
-        {
+    model_a_results.append({
             "model": name,
             "RMSE": rmse,
             "RMSLE": rmsle,
             "MAE": mae,
             "R2": r2,
-        }
-    )
-    model_f_trained[name] = candidate
+    })
+    model_a_trained[name] = model
 
-model_f_df = pd.DataFrame(model_f_results).sort_values("RMSLE")
+# Inspect models accuracy
+model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
+
+# Here we could include some of the most relevant grafics 
 
 
-# %% Inspect models accuracy
- 
+# %% Models B (GridCV)
+
+
+# %% Models C (Mean of the best Models)
+
+
+# %% Model D (100% Train , 0% Test)
+
 
 # %% Submissions
 
-test_data = pd.read_csv(TEST_PATH)
-submission = pd.read_csv(SAMPLE_SUBMISSION_PATH)
+test_data = pd.read_csv(test_path)
+test_X = test_data.drop(columns="Id")
+test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
+test_X = preprocessor.transform(test_X)
+test_X = scaler.transform(test_X)
 
-ids = test_data.pop("Id")
-test_data["MSSubClass"] = test_data["MSSubClass"].astype(str)
+for model_name, model in model_a_trained.items():
+    submission = pd.DataFrame({
+        "Id": test_data["Id"],
+        "SalePrice": np.maximum(model.predict(test_X), 0),
+    })
 
-best_model_name = model_f_df.iloc[0]["model"]
-best_model = model_f_trained[best_model_name]
+    submission_path = project_root / "submissions" / f"submission_{model_name.lower()}.csv"
+    submission.to_csv(submission_path, index=False)
 
-test_predictions = best_model.predict(test_data)
-test_predictions = np.maximum(test_predictions, 0)
-
-submission["Id"] = ids
-submission["SalePrice"] = test_predictions
-
-output_path = PROJECT_ROOT / "submission.csv"
-submission.to_csv(output_path, index=False)
-
-print(f"Best model used: {best_model_name}")
-print("Saved submission")
-submission.head()
-
-submission.describe()
-
-
-
+print("Saved all submissions")
