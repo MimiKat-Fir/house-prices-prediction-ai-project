@@ -578,12 +578,12 @@ print(
 #####################################################
 
 top_n = 3 # number of top models to use
-best_models_c = model_a_df.nsmallest(top_n, "RMSLE")["model"].tolist()
-print(f"Model C uses: {best_models_c}")
+best_models_c = model_b_df.nsmallest(top_n, "Test_RMSLE")["model"].tolist()
+print(f"\nModel C uses tuned models from Model B: {best_models_c}")
 
 # Calculate Model C predictions (average of best models)
 model_c_preds = np.mean(
-    [model_a_trained[name].predict(X_test) for name in best_models_c],
+    [model_b_trained[name].predict(X_test) for name in best_models_c],
     axis=0
 )
 model_c_preds = np.maximum(model_c_preds, 0)  # Ensure non-negative
