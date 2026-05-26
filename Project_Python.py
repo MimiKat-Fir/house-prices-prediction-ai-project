@@ -218,27 +218,48 @@ print(f"Validation set: {len(X_test)} samples")
 # %% Models A (basic)
 
 model_a_candidates = {
-    "Decision Tree": DecisionTreeRegressor(random_state=RANDOM_STATE),
-    "KNN": KNeighborsRegressor(n_neighbors=5),
-    "SVR": SVR(),
+    "Decision Tree": DecisionTreeRegressor(
+        max_depth=8,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        random_state=RANDOM_STATE
+    ),
+    "KNN": KNeighborsRegressor(
+        n_neighbors=10,
+        weights="distance",
+        algorithm="auto"
+    ),
+    "SVR": SVR(
+        kernel="rbf",
+        C=1.0,
+        gamma="scale"
+    ),
     "Random Forest": RandomForestRegressor(
-        n_estimators=300,
+        n_estimators=500,
+        max_depth=10,
+        min_samples_split=5,
         random_state=RANDOM_STATE,
         n_jobs=-1,
     ),
     "AdaBoost": AdaBoostRegressor(
         estimator=DecisionTreeRegressor(max_depth=3, random_state=RANDOM_STATE),
-        n_estimators=100,
+        n_estimators=200,
+        learning_rate=0.1,
         random_state=RANDOM_STATE,
     ),
-    "Gradient_Boosting": GradientBoostingRegressor(random_state=RANDOM_STATE),
+    "Gradient_Boosting": GradientBoostingRegressor(
+        random_state=RANDOM_STATE
+    ),
     "XGBoost":xgb.XGBRegressor(
-    n_estimators=300,
-    max_depth=3,
-    learning_rate=0.05,
-    objective="reg:squarederror",
-    random_state=RANDOM_STATE,
-    n_jobs=-1,
+        n_estimators=500,
+        max_depth=6,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        gamma=0,
+        reg_alpha=0,
+        reg_lambda=1,
+        n_jobs=-1,
     ),
 }
 
@@ -275,25 +296,58 @@ model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
 
 # %% Models C (Mean of the best Models)
 
+top_n = 3 # number of top models to use
+best_models_c = model_a_df.nsmallest(top_n, "RMSLE")["model"].tolist()
+print(f"Model C uses: {best_models_c}")
+
+# Calculate Model C predictions (average of best models)
+model_c_preds = np.mean(
+    [model_a_trained[name].predict(X_test) for name in best_models_c],
+    axis=0
+)
+model_c_preds = np.maximum(model_c_preds, 0)  # Ensure non-negative
+
+# Model C metrics
+model_c_metrics = {
+    "RMSE": np.sqrt(mean_squared_error(y_test, model_c_preds)),
+    "RMSLE": np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(model_c_preds))),
+    "MAE": mean_absolute_error(y_test, model_c_preds),
+    "R2": r2_score(y_test, model_c_preds)
+}
+print("Model C Metrics:", {k: f"{v:.4f}" for k, v in model_c_metrics.items()})
 
 # %% Model D (100% Train , 0% Test)
+from sklearn.base import clone
 
+model_d_pipelines = []
+for name in best_models_c:
+    pipeline = Pipeline(
+        steps=[
+            ("preprocess", preprocessor),
+            ("scaler", StandardScaler()),
+            ("model", clone(model_a_trained[name]))  # Fresh copy with same params
+        ]
+    )
+    pipeline.fit(X0, y)  # Train with all data
+    model_d_pipelines.append(pipeline)
+
+def model_d_predict(X):
+    """Average predictions from all Model D pipelines"""
+    return np.mean([pipe.predict(X) for pipe in model_d_pipelines], axis=0)
+
+print("Model D trained on full dataset")
 
 # %% Submissions
 
 test_data = pd.read_csv(test_path)
 test_X = test_data.drop(columns="Id")
 test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
-test_X = preprocessor.transform(test_X)
-test_X = scaler.transform(test_X)
 
-for model_name, model in model_a_trained.items():
-    submission = pd.DataFrame({
-        "Id": test_data["Id"],
-        "SalePrice": np.maximum(model.predict(test_X), 0),
-    })
+# Predict with Model D
+test_predictions = np.maximum(model_d_predict(test_X), 0)
 
-    submission_path = project_root / "submissions" / f"submission_{model_name.lower()}.csv"
-    submission.to_csv(submission_path, index=False)
-
-print("Saved all submissions")
+submission = pd.DataFrame({
+    "Id": test_data["Id"],
+    "SalePrice": test_predictions
+})
+submission.to_csv(project_root / "submissions" / "submission_model_d.csv", index=False)
