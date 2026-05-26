@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 Created on Mon May 25 19:24:24 2026
 
 @author: firas, sueda, emir
@@ -23,7 +22,8 @@ from sklearn.ensemble import (
 from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+from sklearn.metrics import make_scorer
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
@@ -34,7 +34,7 @@ from sklearn.tree import DecisionTreeRegressor
 RANDOM_STATE = 42
 sns.set_theme(style="whitegrid")
 
-# %% Load the dataset
+#Load the dataset
 
 project_root = Path(__file__).resolve().parent
 
@@ -43,7 +43,7 @@ train_path = project_root / "data" / "train_cleaned.csv"
 test_path = project_root / "data" / "test.csv"
 
 
-# %% Clean 
+#Removing Id columns
 
 dataset_old_df = pd.read_csv(train_old_path)
 dataset_df = pd.read_csv(train_path)
@@ -56,17 +56,19 @@ print(f"Deafult Dataset shape is {dataset_old_df.shape}")
 print(f"Cleaned Dataset shape is {dataset_df.shape}")
 
 
-# %% Numerical vs Categorical 
+#Numerical vs Categorical features seperation
 
 numeric_features = dataset_df.drop(columns=["SalePrice"]).select_dtypes(include=["int64", "float64"]).columns.tolist()
 categorical_features = dataset_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
 print(f"Numeric features: {len(numeric_features)}")
-print(f"Numeric features: {len(categorical_features)}")
+print(f"Categorical features: {len(categorical_features)}")
 
-# %% Data Transformation
+###########################################################
+# Data Transformation
+###########################################################
+# Now we separate the ordinal features from categorical ones
 
-# Now we have to separate the ordinal from pure categorical
 ordinal_features = [
       "Street",
       "Alley",
@@ -104,6 +106,7 @@ onehot_features = [
 quality_order = ["Po", "Fa", "TA", "Gd", "Ex"]
 quality_order_with_none = ["None", "Po", "Fa", "TA", "Gd", "Ex"]
 
+# We need to specify the order of categories for ordinal features, so that they can be transformed into ordered numbers
 ordinal_categories = [
       ["Grvl", "Pave"],                          # Street
       ["None", "Grvl", "Pave"],                  # Alley
@@ -146,6 +149,7 @@ ordinal_categories = [
     #    - ordinal_features use ordinal_transformer
     #    - onehot_features use onehot_transformer
 
+
 numeric_transformer = Pipeline(
       steps=[
           ("imputer", SimpleImputer(strategy="median"))
@@ -183,7 +187,7 @@ preprocessor = ColumnTransformer(
 print(f"Ordinal categorical features: {len(ordinal_features)}")
 print(f"One-hot categorical features: {len(onehot_features)}")
 
-# %% Cleaned, transformed data
+# Cleaned, transformed data
 
 X0 = dataset_df.drop(columns="SalePrice")
 y = dataset_df["SalePrice"]
@@ -195,7 +199,9 @@ print("Missing values before transformation:", X0.isnull().sum().sum())
 print("Missing values after transformation:", np.isnan(X1).sum())
 
 
-# %% Normalization of the transformed data
+#############################################################
+# Normalization of transformed data
+#############################################################
 
 scaler = StandardScaler()
 X = scaler.fit_transform(X1)
@@ -203,7 +209,7 @@ X = scaler.fit_transform(X1)
 print("Normalized X shape:", X.shape)
 print("Missing values after normalization:", np.isnan(X).sum())
 
-# %%  Train Data
+# Train Data
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
@@ -215,7 +221,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
 print(f"Validation set: {len(X_test)} samples")
 
-# %% Models A (basic)
+############################################################
+# MODEL A (basic) - DEFAULT MODELS
+############################################################
 
 model_a_candidates = {
     "Decision Tree": DecisionTreeRegressor(
@@ -288,13 +296,221 @@ for name, model in model_a_candidates.items():
 # Inspect models accuracy
 model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
 
-# Here we could include some of the most relevant grafics 
+
+############################################################
+# MODEL A DEFAULT MODELS VISUAL COMPARISON
+############################################################
+
+print("\nMODEL A - Default Model Results")
+print(model_a_df.to_string(index=False))
+
+# RMSLE comparison
+plt.figure(figsize=(10, 5))
+sns.barplot(
+    data=model_a_df,
+    x="RMSLE",
+    y="model"
+)
+plt.title("Model A - Default Models Compared by RMSLE")
+plt.xlabel("RMSLE lower is better")
+plt.ylabel("Model")
+plt.tight_layout()
+plt.show()
+
+# RMSE comparison
+plt.figure(figsize=(10, 5))
+sns.barplot(
+    data=model_a_df.sort_values("RMSE"),
+    x="RMSE",
+    y="model"
+)
+plt.title("Model A - Default Models Compared by RMSE")
+plt.xlabel("RMSE lower is better")
+plt.ylabel("Model")
+plt.tight_layout()
+plt.show()
+
+# R2 comparison
+plt.figure(figsize=(10, 5))
+sns.barplot(
+    data=model_a_df.sort_values("R2", ascending=False),
+    x="R2",
+    y="model"
+)
+plt.title("Model A - Default Models Compared by R²")
+plt.xlabel("R² higher is better")
+plt.ylabel("Model")
+plt.tight_layout()
+plt.show()
+
+#############################################################
+# Models B (GridSearchCV) Playing with hyperparameters 
+# we'll be using the best 3 models from model A to do hyperparameter tuning with GridSearchCV
+# Random Forest, Gradient Boosting and XGBoost
+#############################################################
+
+def rmsle_metric(y_true, y_pred):
+    """
+    RMSLE metric for house price prediction.
+    Lower RMSLE is better.
+    """
+    y_pred = np.maximum(y_pred, 0)
+    return np.sqrt(mean_squared_error(np.log1p(y_true), np.log1p(y_pred)))
 
 
-# %% Models B (GridCV)
+# GridSearchCV maximizes the score.
+# Because RMSLE is an error metric and lower is better,
+# we use greater_is_better=False.
+rmsle_scorer = make_scorer(
+    rmsle_metric,
+    greater_is_better=False
+)
 
 
-# %% Models C (Mean of the best Models)
+cv_strategy = KFold(
+    n_splits=5,
+    shuffle=True,
+    random_state=RANDOM_STATE
+)
+
+###########################
+# The best 3 models
+###########################
+
+#this part might take a while to run because of the large hyperparameter grid and the use of cross-validation !!!
+
+model_b_candidates = {
+    "XGBoost": {
+        "model": xgb.XGBRegressor(
+            objective="reg:squarederror",
+            random_state=RANDOM_STATE,
+            n_jobs=-1
+        ),
+        "params": {
+            "n_estimators": [200, 300, 500],
+            "max_depth": [2, 3, 4],
+            "learning_rate": [0.03, 0.05, 0.1],
+            "subsample": [0.8, 1.0],
+            "colsample_bytree": [0.8, 1.0]
+        }
+    },
+
+    "Random Forest": {
+        "model": RandomForestRegressor(
+            random_state=RANDOM_STATE,
+            n_jobs=-1
+        ),
+        "params": {
+            "n_estimators": [200, 300, 500],
+            "max_depth": [None, 10, 20],
+            "min_samples_split": [2, 5],
+            "min_samples_leaf": [1, 2],
+            "max_features": ["sqrt", 0.8]
+        }
+    },
+
+    "Gradient Boosting": {
+        "model": GradientBoostingRegressor(
+            random_state=RANDOM_STATE
+        ),
+        "params": {
+            "n_estimators": [100, 200, 300],
+            "learning_rate": [0.03, 0.05, 0.1],
+            "max_depth": [2, 3],
+            "min_samples_split": [2, 5],
+            "min_samples_leaf": [1, 2],
+            "subsample": [0.8, 1.0]
+        }
+    }
+}
+
+model_b_results = []
+model_b_trained = {}
+
+for name, item in model_b_candidates.items():
+    print(f"\nTuning {name} with GridSearchCV...")
+
+    grid_search = GridSearchCV(
+        estimator=item["model"],
+        param_grid=item["params"],
+        scoring=rmsle_scorer,
+        cv=cv_strategy,
+        n_jobs=-1,
+        verbose=1
+    )
+
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    preds = best_model.predict(X_test)
+    preds = np.maximum(preds, 0)
+
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+    rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+    mae = mean_absolute_error(y_test, preds)
+    r2 = r2_score(y_test, preds)
+
+    model_b_results.append({
+        "model": name,
+        "best_params": grid_search.best_params_,
+        "CV_RMSLE": -grid_search.best_score_,
+        "Test_RMSE": rmse,
+        "Test_RMSLE": rmsle,
+        "Test_MAE": mae,
+        "Test_R2": r2
+    })
+
+    model_b_trained[name] = best_model
+
+    print(f"\nBest parameters for {name}:")
+    print(grid_search.best_params_)
+
+    print(f"\n{name} tuned results:")
+    print(f"CV RMSLE: {-grid_search.best_score_:.4f}")
+    print(f"Test RMSLE: {rmsle:.4f}")
+    print(f"Test RMSE: {rmse:.2f}")
+    print(f"Test MAE: {mae:.2f}")
+    print(f"Test R2: {r2:.4f}")
+
+    #Results table
+
+    model_b_df = pd.DataFrame(model_b_results).sort_values("Test_RMSLE")
+
+print("\nMODEL B - GridSearchCV Results")
+print(
+    model_b_df[
+        [
+            "model",
+            "CV_RMSLE",
+            "Test_RMSLE",
+            "Test_RMSE",
+            "Test_MAE",
+            "Test_R2"
+        ]
+    ].to_string(index=False)
+)
+
+print("\nMODEL A - Default Model Results")
+print(model_a_df.to_string(index=False))
+
+print("\nMODEL B - Tuned Model Results")
+print(
+    model_b_df[
+        [
+            "model",
+            "CV_RMSLE",
+            "Test_RMSLE",
+            "Test_RMSE",
+            "Test_MAE",
+            "Test_R2"
+        ]
+    ].to_string(index=False)
+)
+
+#####################################################
+# Models C (Mean of the best Models)
+#####################################################
 
 top_n = 3 # number of top models to use
 best_models_c = model_a_df.nsmallest(top_n, "RMSLE")["model"].tolist()
@@ -316,7 +532,11 @@ model_c_metrics = {
 }
 print("Model C Metrics:", {k: f"{v:.4f}" for k, v in model_c_metrics.items()})
 
-# %% Model D (100% Train , 0% Test)
+
+########################################################
+# Model D (100% Train , 0% Test)
+########################################################
+
 from sklearn.base import clone
 
 model_d_pipelines = []
@@ -337,7 +557,9 @@ def model_d_predict(X):
 
 print("Model D trained on full dataset")
 
-# %% Submissions
+######################################################
+# Submissions
+######################################################
 
 test_data = pd.read_csv(test_path)
 test_X = test_data.drop(columns="Id")
