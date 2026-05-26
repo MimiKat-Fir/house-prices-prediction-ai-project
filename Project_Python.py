@@ -42,6 +42,71 @@ train_old_path = project_root / "data" / "train.csv"
 train_path = project_root / "data" / "train_cleaned.csv"
 test_path = project_root / "data" / "test.csv"
 
+##########################################################
+# Data Cleaning - (from the file data_analyze.ipynb)
+##########################################################
+
+df = pd.read_csv(train_old_path)
+
+none_cols = [
+    "PoolQC",
+    "MiscFeature",
+    "Alley",
+    "Fence",
+    "FireplaceQu",
+    "GarageType",
+    "GarageFinish",
+    "GarageQual",
+    "GarageCond",
+    "BsmtQual",
+    "BsmtCond",
+    "BsmtExposure",
+    "BsmtFinType1",
+    "BsmtFinType2",
+    "MasVnrType"
+]
+df[none_cols].isnull().sum()
+
+#we replace the missing values with "None" for the columns that have missing values representing the absence of a feature (e.g., no pool, no garage, etc.)
+for col in none_cols:
+    df[col] = df[col].fillna("None")
+
+# Fill remaining numerical missing values
+df["LotFrontage"] = df["LotFrontage"].fillna(df["LotFrontage"].median())
+df["GarageYrBlt"] = df["GarageYrBlt"].fillna(0)
+df["MasVnrArea"] = df["MasVnrArea"].fillna(0)
+
+# Fill remaining categorical missing value
+df["Electrical"] = df["Electrical"].fillna(df["Electrical"].mode()[0])
+
+# Check if any missing values remain
+print("Total missing values:", df.isnull().sum().sum())
+
+missing_values = df.isnull().sum().sort_values(ascending=False)
+missing_values[missing_values > 0]
+
+#EDA: exploatory data analysis
+#How sale price is distributed
+plt.figure(figsize=(8, 4))
+sns.histplot(df["SalePrice"], kde=True)
+plt.title("Distribution of SalePrice")
+plt.xlabel("SalePrice")
+plt.ylabel("Count")
+plt.show()
+
+df["MSSubClass"] = df["MSSubClass"].astype(str)
+#now we seperate numerical and categorical features
+target = "SalePrice"
+
+X = df.drop(columns=["Id", target])
+y = df[target]
+
+numeric_features = X.select_dtypes(include=["int64", "float64"]).columns
+categorical_features = X.select_dtypes(include=["object"]).columns
+
+#df.to_csv("train_cleaned.csv", index=False) we already have the file so if needed again we can uncomment this line
+
+#################################################################################
 
 #Removing Id columns
 
