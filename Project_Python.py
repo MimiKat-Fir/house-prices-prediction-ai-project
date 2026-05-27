@@ -585,53 +585,60 @@ print(
 # %% Models C (Mean of the best Models)
 #####################################################
 
+preds_c_xgb = model_b_trained["XGBoost"].predict(X_test)
+preds_c_rf = model_b_trained["Random Forest"].predict(X_test)
+preds_c_gb = model_b_trained["Gradient Boosting"] .predict(X_test)
+
 # model_c = 0.4 prediction Gradient_Boosting + 0.6 prediction XGBoost
+model_c_preds = 0.6 * preds_c_xgb + 0.2 * preds_c_gb + 0.2 * preds_c_rf
 # RMSE
+model_c_rmse = np.sqrt(mean_squared_error(y_test, model_c_preds))
+print(f"Model C - RMSE: {model_c_rmse:.2f}")
 
 ########################################################
 # %% Model D (100% Train , 0% Test)
 ########################################################
-    
-    # "Gradient_Boosting"
-    model_gradientboost = GradientBoostingRegressor(
-        random_state=RANDOM_STATE)
-    model_gradientboost.fit(X, y)
-    
-    # "XGBoost"
-    model_xgb = xgb.XGBRegressor(
-        n_estimators=500,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        gamma=0,
-        reg_alpha=0,
-        reg_lambda=1,
-        n_jobs=-1,)
-    model_xgb.fit(X, y)
-    
-    
-    # Preds with test.csv
-    preds_Gradient_Boosting = model_gradientboost.predict(test_X)
-    preds_model_xgb = model.predict(test_X)
-    model_d_pred = 0.4 preds_Gradient_Boosting + 0.6 preds_model_xgb
-    
-    # %% Submissions
-    ######################################################
 
-    test_data = pd.read_csv(test_path)
-    test_X = test_data.drop(columns="Id")
-    test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
+# "XGBoost"
+model_d_xgb = xgb.XGBRegressor(
+    n_estimators=500,
+    max_depth=6,
+    learning_rate=0.05,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    gamma=0,
+    reg_alpha=0,
+    reg_lambda=1,
+    n_jobs=-1
+)
 
-    # Predict with Model D
-    test_predictions = model_d_predict(test_X)
-    # test_predictions = model_d_pred
+# "Gradient_Boosting"
+model_d_gb = GradientBoostingRegressor(
+    random_state=RANDOM_STATE
+)
 
-    submission = pd.DataFrame({
-        "Id": test_data["Id"],
-        "SalePrice": test_predictions
-    })
-    submission.to_csv(project_root / "submissions" / "submission_model_d.csv", index=False)
+model_d_xgb.fit(X, y)
+model_d_gb.fit(X, y)
+
+
+    
+# %% Submissions
+######################################################
+
+test_data = pd.read_csv(test_path)
+test_X = test_data.drop(columns="Id")
+test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
+
+# Predict with Model D
+preds_d_gb = model_d_gb.predict(test_X)
+preds_d_xgb = model_d_xgb.predict(test_X)
+model_d_pred = 0.6 * preds_d_xgb + 0.4 * preds_d_gb
+
+submission = pd.DataFrame({
+    "Id": test_data["Id"],
+    "SalePrice": model_d_pred
+})
+submission.to_csv(project_root / "submissions" / "submission_model_d.csv", index=False)
 
 
 
