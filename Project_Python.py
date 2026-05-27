@@ -617,8 +617,18 @@ model_d_gb = GradientBoostingRegressor(
     random_state=RANDOM_STATE
 )
 
+# "Random Forest"
+model_d_rf = RandomForestRegressor(
+    n_estimators=500,
+    max_depth=10,
+    min_samples_split=5,
+    random_state=RANDOM_STATE,
+    n_jobs=-1
+)
+
 model_d_xgb.fit(X, y)
 model_d_gb.fit(X, y)
+model_d_rf.fit(X, y)
 
 
     
@@ -629,10 +639,14 @@ test_data = pd.read_csv(test_path)
 test_X = test_data.drop(columns="Id")
 test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
 
+test_X_preprocessed = preprocessor.transform(test_X)
+test_X_scaled = scaler.transform(test_X_preprocessed)
+
 # Predict with Model D
-preds_d_gb = model_d_gb.predict(test_X)
-preds_d_xgb = model_d_xgb.predict(test_X)
-model_d_pred = 0.6 * preds_d_xgb + 0.4 * preds_d_gb
+preds_d_gb = model_d_gb.predict(test_X_scaled)
+preds_d_xgb = model_d_xgb.predict(test_X_scaled)
+preds_d_rf = model_d_rf.fit(X, y).predict(test_X_scaled)
+model_d_pred = 1 * preds_d_xgb + 0 * preds_d_gb + 0 * preds_d_rf
 
 submission = pd.DataFrame({
     "Id": test_data["Id"],
