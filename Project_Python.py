@@ -7,7 +7,6 @@ Created on Mon May 25 19:24:24 2026
 """
 
 # Import libraries
-
 from pathlib import Path
 import matplotlib.pyplot as plt
 import joblib
@@ -35,21 +34,14 @@ from sklearn.tree import DecisionTreeRegressor
 RANDOM_STATE = 42
 sns.set_theme(style="whitegrid")
 
-try:
-    get_ipython().run_line_magic("matplotlib", "inline")
-except NameError:
-    pass
-
 #Load the dataset
-
 project_root = Path(__file__).resolve().parent
-
 train_old_path = project_root / "data" / "train.csv"
 train_path = project_root / "data" / "train_cleaned.csv"
 test_path = project_root / "data" / "test.csv"
 
 ##########################################################
-# Data Cleaning - (from the file data_analyze.ipynb)
+# %% Data Cleaning - (from the file data_analyze.ipynb)
 ##########################################################
 
 df = pd.read_csv(train_old_path)
@@ -132,11 +124,9 @@ print(f"Cleaned Dataset shape is {dataset_df.shape}")
 numeric_features = dataset_df.drop(columns=["SalePrice"]).select_dtypes(include=["int64", "float64"]).columns.tolist()
 categorical_features = dataset_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
-print(f"Numeric features: {len(numeric_features)}")
-print(f"Categorical features: {len(categorical_features)}")
 
 ###########################################################
-# Data Transformation
+# %% Data Transformation
 ###########################################################
 # Now we separate the ordinal features from categorical ones
 
@@ -173,7 +163,7 @@ onehot_features = [
       if col not in ordinal_features
 ]
 
-
+# Typical order
 quality_order = ["Po", "Fa", "TA", "Gd", "Ex"]
 quality_order_with_none = ["None", "Po", "Fa", "TA", "Gd", "Ex"]
 
@@ -222,10 +212,7 @@ ordinal_categories = [
 
 
 numeric_transformer = Pipeline(
-      steps=[
-          ("imputer", SimpleImputer(strategy="median"))
-      ]
-)
+      steps=[("imputer", SimpleImputer(strategy="median"))])
 
 ordinal_transformer = Pipeline(
       steps=[
@@ -233,37 +220,32 @@ ordinal_transformer = Pipeline(
           ("ordinal", OrdinalEncoder(
               categories=ordinal_categories,
               handle_unknown="use_encoded_value",
-              unknown_value=-1
-          ))
-      ]
-)
+              unknown_value=-1))])
 
 onehot_transformer = Pipeline(
       steps=[
           ("imputer", SimpleImputer(strategy="most_frequent")),
-          ("onehot", OneHotEncoder(handle_unknown="ignore"))
-      ]
-)
+          ("onehot", OneHotEncoder(handle_unknown="ignore"))])
 
 # ColumnTransformer: to apply tranformations to every column differently
 preprocessor = ColumnTransformer(
       transformers=[
           ("num", numeric_transformer, numeric_features),
           ("ord", ordinal_transformer, ordinal_features),
-          ("cat", onehot_transformer, onehot_features),
-      ],
-      sparse_threshold=0
-)
+          ("cat", onehot_transformer, onehot_features),],
+      sparse_threshold=0)
 
-print(f"Ordinal categorical features: {len(ordinal_features)}")
-print(f"One-hot categorical features: {len(onehot_features)}")
 
 # Cleaned, transformed data
+X0 = dataset_df.drop(columns="SalePrice")   # X original
+y = dataset_df["SalePrice"]                 # y original
+X1 = preprocessor.fit_transform(X0)         # X cleaned
 
-X0 = dataset_df.drop(columns="SalePrice")
-y = dataset_df["SalePrice"]
-X1 = preprocessor.fit_transform(X0)
+# Normalization
+scaler = StandardScaler()
+X = scaler.fit_transform(X1)                # X normalized
 
+print("-------------- Cleaning data: -----------------")
 print("Original cleaned data shape:", X0.shape)
 print("Transformed data shape:", X1.shape)
 print("Missing values before transformation:", X0.isnull().sum().sum())
@@ -271,29 +253,21 @@ print("Missing values after transformation:", np.isnan(X1).sum())
 
 
 #############################################################
-# Normalization of transformed data
+# %% Train Data
 #############################################################
-
-scaler = StandardScaler()
-X = scaler.fit_transform(X1)
-
-print("Normalized X shape:", X.shape)
-print("Missing values after normalization:", np.isnan(X).sum())
-
-# Train Data
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    random_state=RANDOM_STATE,
-)
+    random_state=RANDOM_STATE,)
 
+print("-------------- Training data: -----------------")
 print(f"Training set: {len(X_train)} samples, {X_train.shape[1]} features")
 print(f"Validation set: {len(X_test)} samples")
 
 ############################################################
-# MODEL A (basic) - DEFAULT MODELS
+# %% MODEL A (basic) - DEFAULT MODELS
 ############################################################
 
 model_a_candidates = {
@@ -369,11 +343,8 @@ model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
 
 
 ############################################################
-# MODEL A COMPARISON
+# %% MODEL A Graphs
 ############################################################
-
-print("\nMODEL A - Default Model Results")
-print(model_a_df.to_string(index=False))
 
 # RMSLE comparison
 plt.figure(figsize=(10, 5))
@@ -388,34 +359,34 @@ plt.ylabel("Model")
 plt.tight_layout()
 plt.show()
 
-# RMSE comparison
-plt.figure(figsize=(10, 5))
-sns.barplot(
-    data=model_a_df.sort_values("RMSE"),
-    x="RMSE",
-    y="model"
-)
-plt.title("Model A - Default Models Compared by RMSE")
-plt.xlabel("RMSE lower is better")
-plt.ylabel("Model")
-plt.tight_layout()
-plt.show()
+# # RMSE comparison
+# plt.figure(figsize=(10, 5))
+# sns.barplot(
+#     data=model_a_df.sort_values("RMSE"),
+#     x="RMSE",
+#     y="model"
+# )
+# plt.title("Model A - Default Models Compared by RMSE")
+# plt.xlabel("RMSE lower is better")
+# plt.ylabel("Model")
+# plt.tight_layout()
+# plt.show()
 
-# R2 comparison
-plt.figure(figsize=(10, 5))
-sns.barplot(
-    data=model_a_df.sort_values("R2", ascending=False),
-    x="R2",
-    y="model"
-)
-plt.title("Model A - Default Models Compared by R²")
-plt.xlabel("R² higher is better")
-plt.ylabel("Model")
-plt.tight_layout()
-plt.show()
+# # R2 comparison
+# plt.figure(figsize=(10, 5))
+# sns.barplot(
+#     data=model_a_df.sort_values("R2", ascending=False),
+#     x="R2",
+#     y="model"
+# )
+# plt.title("Model A - Default Models Compared by R²")
+# plt.xlabel("R² higher is better")
+# plt.ylabel("Model")
+# plt.tight_layout()
+# plt.show()
 
 #############################################################
-# Models B (GridSearchCV) Playing with hyperparameters 
+# %% Models B (GridSearchCV) Playing with hyperparameters 
 # we'll be using the best 3 models from model A to do hyperparameter tuning with GridSearchCV
 # Random Forest, Gradient Boosting and XGBoost
 #############################################################
@@ -445,7 +416,7 @@ cv_strategy = KFold(
 )
 
 ###########################
-# The best 3 models
+# %% The best 3 models
 ###########################
 
 #this part might take a while to run because of the large hyperparameter grid and the use of cross-validation !!!
@@ -496,7 +467,7 @@ model_b_candidates = {
 }
 
 #############################################################
-# MODEL B CACHE - Save GridSearchCV results
+# %% MODEL B CACHE - Save GridSearchCV results
 #############################################################
 
 model_cache_dir = project_root / "saved_models"
@@ -611,7 +582,7 @@ print(
 )
 
 #####################################################
-# Models C (Mean of the best Models)
+# %% Models C (Mean of the best Models)
 #####################################################
 
 top_n = 3 # number of top models to use
