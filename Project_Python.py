@@ -34,6 +34,11 @@ from sklearn.tree import DecisionTreeRegressor
 RANDOM_STATE = 42
 sns.set_theme(style="whitegrid")
 
+try:
+    get_ipython().run_line_magic("matplotlib", "inline")
+except NameError:
+    pass
+
 #Load the dataset
 
 project_root = Path(__file__).resolve().parent
@@ -363,7 +368,7 @@ model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
 
 
 ############################################################
-# MODEL A DEFAULT MODELS VISUAL COMPARISON
+# MODEL A COMPARISON
 ############################################################
 
 print("\nMODEL A - Default Model Results")
@@ -599,12 +604,13 @@ print("Model C Metrics:", {k: f"{v:.4f}" for k, v in model_c_metrics.items()})
 
 
 ########################################################
-# Model D (100% Train , 0% Test)
+# %% Model D (100% Train , 0% Test)
 ########################################################
 
 from sklearn.base import clone
 
 model_d_pipelines = []
+
 for name in best_models_c:
     pipeline = Pipeline(
         steps=[
@@ -622,8 +628,126 @@ def model_d_predict(X):
 
 print("Model D trained on full dataset")
 
-######################################################
-# Submissions
+
+########################################################
+# %% Graphs
+########################################################
+
+# Model A vs Model B: tuned models should improve or stay close to defaults
+model_a_plot = model_a_df[["model", "RMSLE"]].rename(columns={"RMSLE": "RMSLE"})
+model_a_plot["version"] = "Model A default"
+
+model_b_plot = model_b_df[["model", "Test_RMSLE"]].rename(columns={"Test_RMSLE": "RMSLE"})
+model_b_plot["version"] = "Model B tuned"
+
+models_comparison_plot = pd.concat([model_a_plot, model_b_plot], ignore_index=True)
+
+plt.figure(figsize=(10, 5))
+sns.barplot(data=models_comparison_plot, x="RMSLE", y="model", hue="version")
+plt.title("Default vs Tuned Models - RMSLE")
+plt.xlabel("RMSLE lower is better")
+plt.ylabel("Model")
+plt.tight_layout()
+plt.show()
+
+# Random Forest: validation error by number of trees
+rf_tree_results = []
+for n_trees in [50, 100, 200, 300, 500]:
+    rf = RandomForestRegressor(
+        n_estimators=n_trees,
+        max_depth=10,
+        min_samples_split=5,
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+    )
+    rf.fit(X_train, y_train)
+    preds = np.maximum(rf.predict(X_test), 0)
+    rf_tree_results.append({
+        "n_estimators": n_trees,
+        "RMSLE": np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+    })
+
+rf_tree_df = pd.DataFrame(rf_tree_results)
+
+plt.figure(figsize=(7, 4))
+sns.lineplot(data=rf_tree_df, x="n_estimators", y="RMSLE", marker="o")
+plt.title("Random Forest - Trees vs Validation RMSLE")
+plt.xlabel("Number of trees")
+plt.ylabel("RMSLE")
+plt.tight_layout()
+plt.show()
+
+# Gradient Boosting: validation error as trees are added
+boosting_model = GradientBoostingRegressor(
+    n_estimators=300,
+    learning_rate=0.05,
+    max_depth=3,
+    random_state=RANDOM_STATE,
+)
+boosting_model.fit(X_train, y_train)
+
+boosting_results = []
+for i, preds in enumerate(boosting_model.staged_predict(X_test), start=1):
+    if i % 10 == 0:
+        preds = np.maximum(preds, 0)
+        boosting_results.append({
+            "n_estimators": i,
+            "RMSLE": np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+        })
+
+boosting_df = pd.DataFrame(boosting_results)
+
+plt.figure(figsize=(7, 4))
+sns.lineplot(data=boosting_df, x="n_estimators", y="RMSLE")
+plt.title("Gradient Boosting - Trees vs Validation RMSLE")
+plt.xlabel("Number of boosting trees")
+plt.ylabel("RMSLE")
+plt.tight_layout()
+plt.show()
+
+# Use XGBoost if it is available; otherwise use the best available Model A model.
+if "XGBoost" in model_b_trained:
+    best_model_name = "XGBoost"
+    best_model = model_b_trained[best_model_name]
+else:
+    best_model_name = model_a_df.iloc[0]["model"]
+    best_model = model_a_trained[best_model_name]
+
+best_preds = np.maximum(best_model.predict(X_test), 0)
+residuals = y_test - best_preds
+abs_errors = np.abs(residuals).to_numpy()
+
+plt.figure(figsize=(6, 6))
+sns.scatterplot(x=y_test, y=best_preds, alpha=0.7)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], color="red", linestyle="--")
+plt.title(f"{best_model_name} - Actual vs Predicted")
+plt.xlabel("Actual SalePrice")
+plt.ylabel("Predicted SalePrice")
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(8, 4))
+sns.scatterplot(x=best_preds, y=residuals, alpha=0.7)
+plt.axhline(0, color="red", linestyle="--")
+plt.title(f"{best_model_name} - Residuals vs Predicted")
+plt.xlabel("Predicted SalePrice")
+plt.ylabel("Residual: actual - predicted")
+plt.tight_layout()
+plt.show()
+
+# Largest individual errors: useful to inspect difficult houses
+largest_error_positions = np.argsort(abs_errors)[-10:]
+
+plt.figure(figsize=(9, 4))
+sns.barplot(x=abs_errors[largest_error_positions], y=[f"Case {i}" for i in largest_error_positions])
+plt.title(f"{best_model_name} - Largest Validation Errors")
+plt.xlabel("Absolute error")
+plt.ylabel("Validation case")
+plt.tight_layout()
+plt.show()
+
+
+# %% Submissions
 ######################################################
 
 test_data = pd.read_csv(test_path)
