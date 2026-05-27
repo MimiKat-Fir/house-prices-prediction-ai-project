@@ -10,6 +10,7 @@ Created on Mon May 25 19:24:24 2026
 
 from pathlib import Path
 import matplotlib.pyplot as plt
+import joblib
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -494,58 +495,89 @@ model_b_candidates = {
     }
 }
 
-model_b_results = []
-model_b_trained = {}
+#############################################################
+# MODEL B CACHE - Save GridSearchCV results
+#############################################################
 
-for name, item in model_b_candidates.items():
-    print(f"\nTuning {name} with GridSearchCV...")
+model_cache_dir = project_root / "saved_models"
+model_cache_dir.mkdir(exist_ok=True)
 
-    grid_search = GridSearchCV(
-        estimator=item["model"],
-        param_grid=item["params"],
-        scoring=rmsle_scorer,
-        cv=cv_strategy,
-        n_jobs=-1,
-        verbose=1
-    )
+model_b_cache_path = model_cache_dir / "model_b_gridsearch_results.pkl"
 
-    grid_search.fit(X_train, y_train)
+if model_b_cache_path.exists():
+    print("\nLoading saved Model B results...")
+    
+    saved_model_b = joblib.load(model_b_cache_path)
+    
+    model_b_df = saved_model_b["model_b_df"]
+    model_b_trained = saved_model_b["model_b_trained"]
+    model_b_results = saved_model_b["model_b_results"]
 
-    best_model = grid_search.best_estimator_
+    print("Model B loaded successfully. GridSearchCV was skipped.")
 
-    preds = best_model.predict(X_test)
-    preds = np.maximum(preds, 0)
+else:
+    print("\nNo saved Model B found. Running GridSearchCV for the first time...")
 
-    rmse = np.sqrt(mean_squared_error(y_test, preds))
-    rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
-    mae = mean_absolute_error(y_test, preds)
-    r2 = r2_score(y_test, preds)
+    model_b_results = []
+    model_b_trained = {}
 
-    model_b_results.append({
-        "model": name,
-        "best_params": grid_search.best_params_,
-        "CV_RMSLE": -grid_search.best_score_,
-        "Test_RMSE": rmse,
-        "Test_RMSLE": rmsle,
-        "Test_MAE": mae,
-        "Test_R2": r2
-    })
+    for name, item in model_b_candidates.items():
+        print(f"\nTuning {name} with GridSearchCV...")
 
-    model_b_trained[name] = best_model
+        grid_search = GridSearchCV(
+            estimator=item["model"],
+            param_grid=item["params"],
+            scoring=rmsle_scorer,
+            cv=cv_strategy,
+            n_jobs=-1,
+            verbose=1
+        )
 
-    print(f"\nBest parameters for {name}:")
-    print(grid_search.best_params_)
+        grid_search.fit(X_train, y_train)
 
-    print(f"\n{name} tuned results:")
-    print(f"CV RMSLE: {-grid_search.best_score_:.4f}")
-    print(f"Test RMSLE: {rmsle:.4f}")
-    print(f"Test RMSE: {rmse:.2f}")
-    print(f"Test MAE: {mae:.2f}")
-    print(f"Test R2: {r2:.4f}")
+        best_model = grid_search.best_estimator_
 
-    #Results table
+        preds = best_model.predict(X_test)
+        preds = np.maximum(preds, 0)
+
+        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+        mae = mean_absolute_error(y_test, preds)
+        r2 = r2_score(y_test, preds)
+
+        model_b_results.append({
+            "model": name,
+            "best_params": grid_search.best_params_,
+            "CV_RMSLE": -grid_search.best_score_,
+            "Test_RMSE": rmse,
+            "Test_RMSLE": rmsle,
+            "Test_MAE": mae,
+            "Test_R2": r2
+        })
+
+        model_b_trained[name] = best_model
+
+        print(f"\nBest parameters for {name}:")
+        print(grid_search.best_params_)
+
+        print(f"\n{name} tuned results:")
+        print(f"CV RMSLE: {-grid_search.best_score_:.4f}")
+        print(f"Test RMSLE: {rmsle:.4f}")
+        print(f"Test RMSE: {rmse:.2f}")
+        print(f"Test MAE: {mae:.2f}")
+        print(f"Test R2: {r2:.4f}")
 
     model_b_df = pd.DataFrame(model_b_results).sort_values("Test_RMSLE")
+
+    saved_model_b = {
+        "model_b_df": model_b_df,
+        "model_b_trained": model_b_trained,
+        "model_b_results": model_b_results
+    }
+
+    joblib.dump(saved_model_b, model_b_cache_path)
+
+    print(f"\nModel B saved successfully to: {model_b_cache_path}")
 
 print("\nMODEL B - GridSearchCV Results")
 print(
