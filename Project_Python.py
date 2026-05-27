@@ -585,51 +585,54 @@ print(
 # %% Models C (Mean of the best Models)
 #####################################################
 
-top_n = 3 # number of top models to use
-best_models_c = model_b_df.nsmallest(top_n, "Test_RMSLE")["model"].tolist()
-print(f"\nModel C uses tuned models from Model B: {best_models_c}")
-
-# Calculate Model C predictions (average of best models)
-model_c_preds = np.mean(
-    [model_b_trained[name].predict(X_test) for name in best_models_c],
-    axis=0
-)
-model_c_preds = np.maximum(model_c_preds, 0)  # Ensure non-negative
-
-# Model C metrics
-model_c_metrics = {
-    "RMSE": np.sqrt(mean_squared_error(y_test, model_c_preds)),
-    "RMSLE": np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(model_c_preds))),
-    "MAE": mean_absolute_error(y_test, model_c_preds),
-    "R2": r2_score(y_test, model_c_preds)
-}
-print("Model C Metrics:", {k: f"{v:.4f}" for k, v in model_c_metrics.items()})
-
+# model_c = 0.4 prediction Gradient_Boosting + 0.6 prediction XGBoost
+# RMSE
 
 ########################################################
 # %% Model D (100% Train , 0% Test)
 ########################################################
+    
+    # "Gradient_Boosting"
+    model_gradientboost = GradientBoostingRegressor(
+        random_state=RANDOM_STATE)
+    model_gradientboost.fit(X, y)
+    
+    # "XGBoost"
+    model_xgb = xgb.XGBRegressor(
+        n_estimators=500,
+        max_depth=6,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        gamma=0,
+        reg_alpha=0,
+        reg_lambda=1,
+        n_jobs=-1,)
+    model_xgb.fit(X, y)
+    
+    
+    # Preds with test.csv
+    preds_Gradient_Boosting = model_gradientboost.predict(test_X)
+    preds_model_xgb = model.predict(test_X)
+    model_d_pred = 0.4 preds_Gradient_Boosting + 0.6 preds_model_xgb
+    
+    # %% Submissions
+    ######################################################
 
-from sklearn.base import clone
+    test_data = pd.read_csv(test_path)
+    test_X = test_data.drop(columns="Id")
+    test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
 
-model_d_pipelines = []
+    # Predict with Model D
+    test_predictions = model_d_predict(test_X)
+    # test_predictions = model_d_pred
 
-for name in best_models_c:
-    pipeline = Pipeline(
-        steps=[
-            ("preprocess", preprocessor),
-            ("scaler", StandardScaler()),
-            ("model", clone(model_b_trained[name]))  # Fresh copy with same params
-        ]
-    )
-    pipeline.fit(X0, y)  # Train with all data
-    model_d_pipelines.append(pipeline)
+    submission = pd.DataFrame({
+        "Id": test_data["Id"],
+        "SalePrice": test_predictions
+    })
+    submission.to_csv(project_root / "submissions" / "submission_model_d.csv", index=False)
 
-def model_d_predict(X):
-    """Average predictions from all Model D pipelines"""
-    return np.mean([pipe.predict(X) for pipe in model_d_pipelines], axis=0)
-
-print("Model D trained on full dataset")
 
 
 ########################################################
@@ -749,19 +752,3 @@ plt.ylabel("Validation case")
 plt.tight_layout()
 plt.show()
 
-
-# %% Submissions
-######################################################
-
-test_data = pd.read_csv(test_path)
-test_X = test_data.drop(columns="Id")
-test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
-
-# Predict with Model D
-test_predictions = np.maximum(model_d_predict(test_X), 0)
-
-submission = pd.DataFrame({
-    "Id": test_data["Id"],
-    "SalePrice": test_predictions
-})
-submission.to_csv(project_root / "submissions" / "submission_model_d.csv", index=False)
