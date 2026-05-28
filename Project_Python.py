@@ -21,6 +21,7 @@ from sklearn.ensemble import (
     RandomForestRegressor,)
 from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
+from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split, GridSearchCV, KFold
 from sklearn.metrics import make_scorer
@@ -239,47 +240,78 @@ print(f"Validation set: {len(X_test)} samples")
 ############################################################
 
 model_a_candidates = {
+    "Linear Regression": LinearRegression(),
+    "Ridge": Ridge(
+        alpha=20.0
+    ),
+    "Lasso": Lasso(
+        alpha=0.01,
+        max_iter=20000,
+        random_state=RANDOM_STATE
+    ),
+    "ElasticNet": ElasticNet(
+        alpha=0.005,
+        l1_ratio=0.5,
+        max_iter=20000,
+        random_state=RANDOM_STATE
+    ),
     "Decision Tree": DecisionTreeRegressor(
-        max_depth=8,
-        min_samples_split=5,
-        min_samples_leaf=2,
+        max_depth=5,
+        min_samples_split=20,
+        min_samples_leaf=10,
         random_state=RANDOM_STATE
     ),
     "KNN": KNeighborsRegressor(
-        n_neighbors=10,
+        n_neighbors=12,
         weights="distance",
         algorithm="auto"
     ),
     "SVR": SVR(
         kernel="rbf",
-        C=1.0,
-        gamma="scale"
+        C=10.0,
+        gamma="scale",
+        epsilon=0.03
     ),
     "Random Forest": RandomForestRegressor(
-        n_estimators=300,
-        max_depth=10,
-        min_samples_split=5,
+        n_estimators=500,
+        max_depth=12,
+        min_samples_split=10,
+        min_samples_leaf=3,
+        max_features=0.7,
         random_state=RANDOM_STATE,
         n_jobs=-1,
     ),
     "AdaBoost": AdaBoostRegressor(
-        estimator=DecisionTreeRegressor(max_depth=3, random_state=RANDOM_STATE),
-        n_estimators=200,
-        learning_rate=0.1,
+        estimator=DecisionTreeRegressor(
+            max_depth=2,
+            min_samples_leaf=10,
+            random_state=RANDOM_STATE
+        ),
+        n_estimators=300,
+        learning_rate=0.03,
         random_state=RANDOM_STATE,
     ),
     "Gradient_Boosting": GradientBoostingRegressor(
+        n_estimators=500,
+        learning_rate=0.03,
+        max_depth=2,
+        min_samples_split=10,
+        min_samples_leaf=5,
+        subsample=0.8,
         random_state=RANDOM_STATE
     ),
     "XGBoost":xgb.XGBRegressor(
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.05,
+        objective="reg:squarederror",
+        n_estimators=600,
+        max_depth=2,
+        learning_rate=0.03,
         subsample=0.8,
         colsample_bytree=0.8,
-        gamma=0,
-        reg_alpha=0,
-        reg_lambda=1,
+        min_child_weight=3,
+        gamma=0.01,
+        reg_alpha=0.01,
+        reg_lambda=5,
+        random_state=RANDOM_STATE,
         n_jobs=-1,
     ),
 }
@@ -312,9 +344,6 @@ model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
 
 
 # Other models that could be intresting
-# Ridge
-# Lasso
-# ElasticNet
 # Voting Regressor
 
 ############################################################
@@ -362,8 +391,8 @@ plt.show()
 
 #############################################################
 # %% Models B (GridSearchCV) Playing with hyperparameters 
-# we'll be using the best 3 models from model A to do hyperparameter tuning with GridSearchCV
-# Random Forest, Gradient Boosting and XGBoost
+# We'll tune 5 top models with GridSearchCV:
+# XGBoost, Random Forest, Gradient_Boosting, ElasticNet and Linear Regression
 #############################################################
 
 def rmsle_metric(y_true, y_pred):
@@ -379,18 +408,36 @@ rmsle_scorer = make_scorer(
 )
 
 cv_strategy = KFold(
-    n_splits=5,
+    n_splits=3,
     shuffle=True,
     random_state=RANDOM_STATE
 )
 
 ###########################
-# %% The best 3 models
+# %% The best 5 models
 ###########################
 
 #this part might take a while to run because of the large hyperparameter grid and the use of cross-validation !!!
 
 model_b_candidates = {
+    "ElasticNet": {
+        "model": ElasticNet(
+            max_iter=50000,
+            random_state=RANDOM_STATE
+        ),
+        "params": {
+            "alpha": [0.0001, 0.0003, 0.001, 0.003, 0.005, 0.01, 0.03],
+            "l1_ratio": [0.1, 0.3, 0.5, 0.7, 0.9]
+        }
+    },
+
+    "Linear Regression": {
+        "model": LinearRegression(),
+        "params": {
+            "fit_intercept": [True, False]
+        }
+    },
+
     "XGBoost": {
         "model": xgb.XGBRegressor(
             objective="reg:squarederror",
@@ -398,11 +445,14 @@ model_b_candidates = {
             n_jobs=-1
         ),
         "params": {
-            "n_estimators": [200, 300],
-            "max_depth": [2, 3, 4],
-            "learning_rate": [0.03, 0.05, 0.1],
-            "subsample": [0.8, 1.0],
-            "colsample_bytree": [0.8, 1.0]
+            "n_estimators": [300],
+            "max_depth": [2, 3],
+            "learning_rate": [0.03, 0.05],
+            "subsample": [0.8],
+            "colsample_bytree": [0.8],
+            "min_child_weight": [3],
+            "reg_lambda": [5],
+            "reg_alpha": [0.01]
         }
     },
 
@@ -412,25 +462,23 @@ model_b_candidates = {
             n_jobs=-1
         ),
         "params": {
-            "n_estimators": [200, 300],
-            "max_depth": [None, 10, 20],
-            "min_samples_split": [2, 5],
-            "min_samples_leaf": [1, 2],
-            "max_features": ["sqrt", 0.8]
+            "n_estimators": [300],
+            "max_depth": [10, None],
+            "min_samples_leaf": [2, 4],
+            "max_features": ["sqrt", 0.7]
         }
     },
 
-    "Gradient Boosting": {
+    "Gradient_Boosting": {
         "model": GradientBoostingRegressor(
             random_state=RANDOM_STATE
         ),
         "params": {
-            "n_estimators": [100, 200, 300],
-            "learning_rate": [0.03, 0.05, 0.1],
+            "n_estimators": [300],
+            "learning_rate": [0.03, 0.05],
             "max_depth": [2, 3],
-            "min_samples_split": [2, 5],
-            "min_samples_leaf": [1, 2],
-            "subsample": [0.8, 1.0]
+            "min_samples_leaf": [3, 5],
+            "subsample": [0.8]
         }
     }
 }
@@ -442,7 +490,7 @@ model_b_candidates = {
 model_cache_dir = project_root / "saved_models"
 model_cache_dir.mkdir(exist_ok=True)
 
-model_b_cache_path = model_cache_dir / "model_b_gridsearch_results_log_target.pkl"
+model_b_cache_path = model_cache_dir / "model_b_gridsearch_results_log_target_top5_elasticnet_focus.pkl"
 
 if model_b_cache_path.exists():
     try:
@@ -543,7 +591,7 @@ print(model_a_df.to_string(index=False))
 #####################################################
 # Get predictions
 preds_c_xgb = model_b_trained["XGBoost"].predict(X_test)
-preds_c_gb = model_b_trained["Gradient Boosting"].predict(X_test)
+preds_c_gb = model_b_trained["Gradient_Boosting"].predict(X_test)
 preds_c_rf = model_b_trained["Random Forest"].predict(X_test)
 
 # Find best weights on validation set
@@ -578,7 +626,7 @@ model_params = dict(zip(model_b_df["model"], model_b_df["best_params"]))
 
 best_params_xgb = model_params["XGBoost"]
 best_params_rf = model_params["Random Forest"]
-best_params_gb = model_params["Gradient Boosting"]
+best_params_gb = model_params["Gradient_Boosting"]
 
 # "XGBoost"
 model_d_xgb = xgb.XGBRegressor(
@@ -639,7 +687,7 @@ submission = pd.DataFrame({
     "Id": test_data["Id"],
     "SalePrice": model_d_pred
 })
-submission.to_csv(project_root / "submissions" / "submission_model_d2_normal_dist.csv", index=False)
+submission.to_csv(project_root / "submissions" / "submission_model_d2_different_hyperparams.csv", index=False)
 
 ########################################################
 # %% Graphs
@@ -689,7 +737,7 @@ plt.ylabel("RMSLE")
 plt.tight_layout()
 plt.show()
 
-# Gradient Boosting: validation error as trees are added
+# Gradient_Boosting: validation error as trees are added
 boosting_model = GradientBoostingRegressor(
     n_estimators=300,
     learning_rate=0.05,
@@ -710,7 +758,7 @@ boosting_df = pd.DataFrame(boosting_results)
 
 plt.figure(figsize=(7, 4))
 sns.lineplot(data=boosting_df, x="n_estimators", y="RMSLE")
-plt.title("Gradient Boosting - Trees vs Validation RMSLE")
+plt.title("Gradient_Boosting - Trees vs Validation RMSLE")
 plt.xlabel("Number of boosting trees")
 plt.ylabel("RMSLE")
 plt.tight_layout()
