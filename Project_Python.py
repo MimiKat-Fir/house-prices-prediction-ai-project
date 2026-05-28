@@ -206,12 +206,15 @@ preprocessor = ColumnTransformer(
 
 # Cleaned, transformed data
 X0 = dataset_df.drop(columns="SalePrice")   # X original
-y = dataset_df["SalePrice"]                 # y original
+y = np.log1p(dataset_df["SalePrice"])       # y in log scale
 X1 = preprocessor.fit_transform(X0)         # X cleaned
 
 # Normalization
 scaler = StandardScaler()
 X = scaler.fit_transform(X1)                # X normalized
+
+def to_price(log_values):
+    return np.maximum(np.expm1(log_values), 0)
 
 print("-------------- Transforming data: -----------------")
 print("Original cleaned data shape:", X0.shape)
@@ -287,12 +290,13 @@ model_a_trained = {}
 for name, model in model_a_candidates.items():
     model.fit(X_train, y_train)
     preds = model.predict(X_test)
-    preds = np.maximum(preds, 0)
+    preds_price = to_price(preds)
+    y_test_price = to_price(y_test)
 
-    rmse = np.sqrt(mean_squared_error(y_test, preds))
-    rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
-    mae = mean_absolute_error(y_test, preds)
-    r2 = r2_score(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test_price, preds_price))
+    rmsle = np.sqrt(mean_squared_error(y_test, preds))
+    mae = mean_absolute_error(y_test_price, preds_price)
+    r2 = r2_score(y_test_price, preds_price)
 
     model_a_results.append({
             "model": name,
@@ -363,8 +367,7 @@ plt.show()
 #############################################################
 
 def rmsle_metric(y_true, y_pred):
-    y_pred = np.maximum(y_pred, 0)
-    return np.sqrt(mean_squared_error(np.log1p(y_true), np.log1p(y_pred)))
+    return np.sqrt(mean_squared_error(y_true, y_pred))
 
 # GridSearchCV maximizes the score.
 # Because RMSLE is an error metric and lower is better,
@@ -439,7 +442,7 @@ model_b_candidates = {
 model_cache_dir = project_root / "saved_models"
 model_cache_dir.mkdir(exist_ok=True)
 
-model_b_cache_path = model_cache_dir / "model_b_gridsearch_results.pkl"
+model_b_cache_path = model_cache_dir / "model_b_gridsearch_results_log_target.pkl"
 
 if model_b_cache_path.exists():
     try:
@@ -477,12 +480,13 @@ else:
         best_model = grid_search.best_estimator_
 
         preds = best_model.predict(X_test)
-        preds = np.maximum(preds, 0)
+        preds_price = to_price(preds)
+        y_test_price = to_price(y_test)
 
-        rmse = np.sqrt(mean_squared_error(y_test, preds))
-        rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
-        mae = mean_absolute_error(y_test, preds)
-        r2 = r2_score(y_test, preds)
+        rmse = np.sqrt(mean_squared_error(y_test_price, preds_price))
+        rmsle = np.sqrt(mean_squared_error(y_test, preds))
+        mae = mean_absolute_error(y_test_price, preds_price)
+        r2 = r2_score(y_test_price, preds_price)
 
         model_b_results.append({
             "model": name,
@@ -550,8 +554,8 @@ for w_xgb in np.arange(0, 1.01, 0.01):
     for w_gb in np.arange(0, 1.01 - w_xgb, 0.01):
         w_rf = 1 - w_xgb - w_gb
         if w_rf < 0: continue
-        weighted_pred = np.maximum(w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf, 0)
-        rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(weighted_pred)))
+        weighted_pred = w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf
+        rmsle = np.sqrt(mean_squared_error(y_test, weighted_pred))
         if rmsle < best_rmsle:
             best_rmsle = rmsle
             best_weights = (w_xgb, w_gb, w_rf)
@@ -563,7 +567,7 @@ model_c_preds = w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf
 print("-------------- Model C: -----------------")
 print(f"\n BEST WEIGHTS: XGB={w_xgb:.2f}, GB={w_gb:.2f}, RF={w_rf:.2f}")
 print(f"Best validation RMSLE: {best_rmsle:.4f}")
-print(f"Model C - RMSE: {np.sqrt(mean_squared_error(y_test, model_c_preds)):.2f}")
+print(f"Model C - RMSE: {np.sqrt(mean_squared_error(to_price(y_test), to_price(model_c_preds))):.2f}")
 
 ########################################################
 # %% Model D (100% Train , 0% Test)
@@ -629,12 +633,13 @@ preds_d_rf = model_d_rf.predict(test_X_scaled)
 
 # Use the best weights found on model C
 model_d_pred = (0.6 * preds_d_xgb) + (0.3 * preds_d_gb) + (0.1 * preds_d_rf)
+model_d_pred = to_price(model_d_pred)
 
 submission = pd.DataFrame({
     "Id": test_data["Id"],
     "SalePrice": model_d_pred
 })
-submission.to_csv(project_root / "submissions" / "submission_model_d2.csv", index=False)
+submission.to_csv(project_root / "submissions" / "submission_model_d2_normal_dist.csv", index=False)
 
 ########################################################
 # %% Graphs
@@ -668,10 +673,10 @@ for n_trees in [50, 100, 200, 300]:
         n_jobs=-1,
     )
     rf.fit(X_train, y_train)
-    preds = np.maximum(rf.predict(X_test), 0)
+    preds = rf.predict(X_test)
     rf_tree_results.append({
         "n_estimators": n_trees,
-        "RMSLE": np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+        "RMSLE": np.sqrt(mean_squared_error(y_test, preds))
     })
 
 rf_tree_df = pd.DataFrame(rf_tree_results)
@@ -696,10 +701,9 @@ boosting_model.fit(X_train, y_train)
 boosting_results = []
 for i, preds in enumerate(boosting_model.staged_predict(X_test), start=1):
     if i % 10 == 0:
-        preds = np.maximum(preds, 0)
         boosting_results.append({
             "n_estimators": i,
-            "RMSLE": np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(preds)))
+            "RMSLE": np.sqrt(mean_squared_error(y_test, preds))
         })
 
 boosting_df = pd.DataFrame(boosting_results)
@@ -720,13 +724,14 @@ else:
     best_model_name = model_a_df.iloc[0]["model"]
     best_model = model_a_trained[best_model_name]
 
-best_preds = np.maximum(best_model.predict(X_test), 0)
-residuals = y_test - best_preds
+best_preds = to_price(best_model.predict(X_test))
+y_test_price = to_price(y_test)
+residuals = y_test_price - best_preds
 abs_errors = np.abs(residuals).to_numpy()
 
 plt.figure(figsize=(6, 6))
-sns.scatterplot(x=y_test, y=best_preds, alpha=0.7)
-plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], color="red", linestyle="--")
+sns.scatterplot(x=y_test_price, y=best_preds, alpha=0.7)
+plt.plot([y_test_price.min(), y_test_price.max()], [y_test_price.min(), y_test_price.max()], color="red", linestyle="--")
 plt.title(f"{best_model_name} - Actual vs Predicted")
 plt.xlabel("Actual SalePrice")
 plt.ylabel("Predicted SalePrice")
@@ -750,6 +755,19 @@ sns.barplot(x=abs_errors[largest_error_positions], y=[f"Case {i}" for i in large
 plt.title(f"{best_model_name} - Largest Validation Errors")
 plt.xlabel("Absolute error")
 plt.ylabel("Validation case")
+plt.tight_layout()
+plt.show()
+
+# SalePrice before and after log transformation
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+sns.histplot(dataset_df["SalePrice"], kde=True, ax=axes[0])
+axes[0].set_title("Original SalePrice")
+axes[0].set_xlabel("SalePrice")
+
+sns.histplot(np.log1p(dataset_df["SalePrice"]), kde=True, ax=axes[1])
+axes[1].set_title("Log transformed SalePrice")
+axes[1].set_xlabel("log1p(SalePrice)")
+
 plt.tight_layout()
 plt.show()
 
