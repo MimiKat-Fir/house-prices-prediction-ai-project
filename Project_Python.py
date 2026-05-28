@@ -91,10 +91,7 @@ print("Total missing values after cleaning:", dataset_df.isnull().sum().sum())
 print(f"Default Dataset shape is {dataset_old_df.shape}")
 print(f"Cleaned Dataset shape is {dataset_df.shape}")
 
-
 #Numerical vs Categorical features seperation
-
-
 numeric_features = dataset_df.drop(columns=["SalePrice"]).select_dtypes(include=["int64", "float64"]).columns.tolist()
 categorical_features = dataset_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
@@ -372,7 +369,6 @@ def rmsle_metric(y_true, y_pred):
     y_pred = np.maximum(y_pred, 0)
     return np.sqrt(mean_squared_error(np.log1p(y_true), np.log1p(y_pred)))
 
-
 # GridSearchCV maximizes the score.
 # Because RMSLE is an error metric and lower is better,
 # we use greater_is_better=False.
@@ -380,7 +376,6 @@ rmsle_scorer = make_scorer(
     rmsle_metric,
     greater_is_better=False
 )
-
 
 cv_strategy = KFold(
     n_splits=5,
@@ -557,52 +552,66 @@ print(
 #####################################################
 # %% Models C (Mean of the best Models)
 #####################################################
-
+# Get predictions
 preds_c_xgb = model_b_trained["XGBoost"].predict(X_test)
+preds_c_gb = model_b_trained["Gradient Boosting"].predict(X_test)
 preds_c_rf = model_b_trained["Random Forest"].predict(X_test)
-preds_c_gb = model_b_trained["Gradient Boosting"] .predict(X_test)
 
-# model_c = 0.4 prediction Gradient_Boosting + 0.6 prediction XGBoost
-model_c_preds = 0.6 * preds_c_xgb + 0.2 * preds_c_gb + 0.2 * preds_c_rf
-# RMSE
-model_c_rmse = np.sqrt(mean_squared_error(y_test, model_c_preds))
-print(f"Model C - RMSE: {model_c_rmse:.2f}")
+# Find best weights on validation set
+best_rmsle = float('inf')
+best_weights = None
+
+for w_xgb in np.arange(0, 1.01, 0.01):
+    for w_gb in np.arange(0, 1.01 - w_xgb, 0.01):
+        w_rf = 1 - w_xgb - w_gb
+        if w_rf < 0: continue
+        weighted_pred = np.maximum(w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf, 0)
+        rmsle = np.sqrt(mean_squared_error(np.log1p(y_test), np.log1p(weighted_pred)))
+        if rmsle < best_rmsle:
+            best_rmsle = rmsle
+            best_weights = (w_xgb, w_gb, w_rf)
+            print(f"New best: XGB={w_xgb:.2f}, GB={w_gb:.2f}, RF={w_rf:.2f} → RMSLE={rmsle:.4f}")
+
+# Apply best weights
+w_xgb, w_gb, w_rf = best_weights
+model_c_preds = w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf
+print(f"\n BEST WEIGHTS: XGB={w_xgb:.2f}, GB={w_gb:.2f}, RF={w_rf:.2f}")
+print(f"Best validation RMSLE: {best_rmsle:.4f}")
+print(f"Model C - RMSE: {np.sqrt(mean_squared_error(y_test, model_c_preds)):.2f}")
 
 ########################################################
 # %% Model D (100% Train , 0% Test)
 ########################################################
 
+# Convert df to dictionary so we can extract bestparams easier
+model_params = dict(zip(model_b_df["model"], model_b_df["best_params"]))
+
+best_params_xgb = model_params["XGBoost"]
+best_params_rf = model_params["Random Forest"]
+best_params_gb = model_params["Gradient Boosting"]
+
 # "XGBoost"
 model_d_xgb = xgb.XGBRegressor(
-    n_estimators=500,
-    max_depth=6,
-    learning_rate=0.05,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    gamma=0,
-    reg_alpha=0,
-    reg_lambda=1,
-    n_jobs=-1
+    objective="reg:squarederror",
+    random_state=RANDOM_STATE,
+    n_jobs=-1,
+    **best_params_xgb
 )
-
 # "Gradient_Boosting"
 model_d_gb = GradientBoostingRegressor(
-    random_state=RANDOM_STATE
+    random_state=RANDOM_STATE,
+    **best_params_gb
 )
-
 # "Random Forest"
 model_d_rf = RandomForestRegressor(
-    n_estimators=500,
-    max_depth=10,
-    min_samples_split=5,
     random_state=RANDOM_STATE,
-    n_jobs=-1
+    n_jobs=-1,
+    **best_params_rf
 )
 
 model_d_xgb.fit(X, y)
 model_d_gb.fit(X, y)
 model_d_rf.fit(X, y)
-
 
     
 # %% Submissions
@@ -618,16 +627,16 @@ test_X_scaled = scaler.transform(test_X_preprocessed)
 # Predict with Model D
 preds_d_gb = model_d_gb.predict(test_X_scaled)
 preds_d_xgb = model_d_xgb.predict(test_X_scaled)
-preds_d_rf = model_d_rf.fit(X, y).predict(test_X_scaled)
-model_d_pred = 1 * preds_d_xgb + 0 * preds_d_gb + 0 * preds_d_rf
+preds_d_rf = model_d_rf.predict(test_X_scaled)
+
+# Use the best weights found on model C
+model_d_pred = (0.6 * preds_d_xgb) + (0.3 * preds_d_gb) + (0.1 * preds_d_rf)
 
 submission = pd.DataFrame({
     "Id": test_data["Id"],
     "SalePrice": model_d_pred
 })
 submission.to_csv(project_root / "submissions" / "submission_model_d2.csv", index=False)
-
-
 
 ########################################################
 # %% Graphs
