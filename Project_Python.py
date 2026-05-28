@@ -36,16 +36,17 @@ sns.set_theme(style="whitegrid")
 
 #Load the dataset
 project_root = Path(__file__).resolve().parent
-
-train_old_path = project_root / "data" / "train.csv"
+train_path = project_root / "data" / "train.csv"
 test_path = project_root / "data" / "test.csv"
 
 ##########################################################
 # %% Data Cleaning - (from the file data_analyze.ipynb)
 ##########################################################
 
-dataset_old_df = pd.read_csv(train_old_path)
-dataset_df = pd.read_csv(train_old_path)
+
+dataset_df = pd.read_csv(train_path)
+dataset_df = dataset_df.drop(columns=["Id"]) #Remove Id columns
+dataset_original_df = dataset_df.copy()
 
 none_cols = [
     "PoolQC",
@@ -81,24 +82,20 @@ dataset_df["Electrical"] = dataset_df["Electrical"].fillna(dataset_df["Electrica
 # Convert MSSubClass to categorical
 dataset_df["MSSubClass"] = dataset_df["MSSubClass"].astype(str)
 
-#Removing Id columns
-
-dataset_old_df = dataset_old_df.drop(columns=["Id"])
-dataset_df = dataset_df.drop(columns=["Id"])
-
+print("-------------- Cleaning data: -----------------")
+print("Missing values before cleaning:", dataset_original_df.isnull().sum().sum())
 print("Total missing values after cleaning:", dataset_df.isnull().sum().sum())
-
-print(f"Default Dataset shape is {dataset_old_df.shape}")
 print(f"Cleaned Dataset shape is {dataset_df.shape}")
 
-#Numerical vs Categorical features seperation
-numeric_features = dataset_df.drop(columns=["SalePrice"]).select_dtypes(include=["int64", "float64"]).columns.tolist()
-categorical_features = dataset_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
 ###########################################################
 # %% Data Transformation
 ###########################################################
 # Now we separate the ordinal features from categorical ones
+
+#Numerical vs Categorical features seperation
+numeric_features = dataset_df.drop(columns=["SalePrice"]).select_dtypes(include=["int64", "float64"]).columns.tolist()
+categorical_features = dataset_df.select_dtypes(include=["object", "string"]).columns.tolist()
 
 ordinal_features = [
       "Street",
@@ -169,10 +166,11 @@ ordinal_categories = [
     # 1. numeric_transformer:
     #    Missing values -> median
     # 2. ordinal_transformer:
-    #    Missing values -> "None", categories -> ordered numbers
+    #    Missing values -> "None"
+    #    categories -> ordered numbers
     #    Example: [None < Po < Fa < TA < Gd < Ex] -> [0,1,2,3,4,5]
     # 3. onehot_transformer:
-    #    Missing values -> frequent value , Then 1Hot
+    #    Missing values -> frequent value , then 1Hot
     
     #    preprocessor:
     #    Combines all transformations in one object:
@@ -215,12 +213,9 @@ X1 = preprocessor.fit_transform(X0)         # X cleaned
 scaler = StandardScaler()
 X = scaler.fit_transform(X1)                # X normalized
 
-print("-------------- Cleaning data: -----------------")
+print("-------------- Transforming data: -----------------")
 print("Original cleaned data shape:", X0.shape)
 print("Transformed data shape:", X1.shape)
-print("Missing values before transformation:", X0.isnull().sum().sum())
-print("Missing values after transformation:", np.isnan(X1).sum())
-
 
 #############################################################
 # %% Train Data
@@ -258,7 +253,7 @@ model_a_candidates = {
         gamma="scale"
     ),
     "Random Forest": RandomForestRegressor(
-        n_estimators=500,
+        n_estimators=300,
         max_depth=10,
         min_samples_split=5,
         random_state=RANDOM_STATE,
@@ -274,7 +269,7 @@ model_a_candidates = {
         random_state=RANDOM_STATE
     ),
     "XGBoost":xgb.XGBRegressor(
-        n_estimators=500,
+        n_estimators=300,
         max_depth=6,
         learning_rate=0.05,
         subsample=0.8,
@@ -311,6 +306,12 @@ for name, model in model_a_candidates.items():
 # Inspect models accuracy
 model_a_df = pd.DataFrame(model_a_results).sort_values("RMSLE")
 
+
+# Other models that could be intresting
+# Ridge
+# Lasso
+# ElasticNet
+# Voting Regressor
 
 ############################################################
 # %% MODEL A Graphs
@@ -362,16 +363,13 @@ plt.show()
 #############################################################
 
 def rmsle_metric(y_true, y_pred):
-    """
-    RMSLE metric for house price prediction.
-    Lower RMSLE is better.
-    """
     y_pred = np.maximum(y_pred, 0)
     return np.sqrt(mean_squared_error(np.log1p(y_true), np.log1p(y_pred)))
 
 # GridSearchCV maximizes the score.
 # Because RMSLE is an error metric and lower is better,
 # we use greater_is_better=False.
+
 rmsle_scorer = make_scorer(
     rmsle_metric,
     greater_is_better=False
@@ -397,7 +395,7 @@ model_b_candidates = {
             n_jobs=-1
         ),
         "params": {
-            "n_estimators": [200, 300, 500],
+            "n_estimators": [200, 300],
             "max_depth": [2, 3, 4],
             "learning_rate": [0.03, 0.05, 0.1],
             "subsample": [0.8, 1.0],
@@ -411,7 +409,7 @@ model_b_candidates = {
             n_jobs=-1
         ),
         "params": {
-            "n_estimators": [200, 300, 500],
+            "n_estimators": [200, 300],
             "max_depth": [None, 10, 20],
             "min_samples_split": [2, 5],
             "min_samples_leaf": [1, 2],
@@ -444,16 +442,18 @@ model_cache_dir.mkdir(exist_ok=True)
 model_b_cache_path = model_cache_dir / "model_b_gridsearch_results.pkl"
 
 if model_b_cache_path.exists():
-    print("\nLoading saved Model B results...")
+    try:
+        print("\nLoading saved Model B results...")
+        
+        saved_model_b = joblib.load(model_b_cache_path)
+        
+        model_b_df = saved_model_b["model_b_df"]
+        model_b_trained = saved_model_b["model_b_trained"]
+        model_b_results = saved_model_b["model_b_results"]
     
-    saved_model_b = joblib.load(model_b_cache_path)
-    
-    model_b_df = saved_model_b["model_b_df"]
-    model_b_trained = saved_model_b["model_b_trained"]
-    model_b_results = saved_model_b["model_b_results"]
-
-    print("Model B loaded successfully. GridSearchCV was skipped.")
-
+        print("Model B loaded successfully. GridSearchCV was skipped.")
+    except:
+        print("Incopatible Cache, delete it.")
 else:
     print("\nNo saved Model B found. Running GridSearchCV for the first time...")
 
@@ -517,7 +517,6 @@ else:
     joblib.dump(saved_model_b, model_b_cache_path)
 
     print(f"\nModel B saved successfully to: {model_b_cache_path}")
-
 print("\nMODEL B - GridSearchCV Results")
 print(
     model_b_df[
@@ -532,22 +531,8 @@ print(
     ].to_string(index=False)
 )
 
-print("\nMODEL A - Default Model Results")
+print("\nMODEL A - Default Model Results (for comparation)")
 print(model_a_df.to_string(index=False))
-
-print("\nMODEL B - Tuned Model Results")
-print(
-    model_b_df[
-        [
-            "model",
-            "CV_RMSLE",
-            "Test_RMSLE",
-            "Test_RMSE",
-            "Test_MAE",
-            "Test_R2"
-        ]
-    ].to_string(index=False)
-)
 
 #####################################################
 # %% Models C (Mean of the best Models)
@@ -570,11 +555,12 @@ for w_xgb in np.arange(0, 1.01, 0.01):
         if rmsle < best_rmsle:
             best_rmsle = rmsle
             best_weights = (w_xgb, w_gb, w_rf)
-            print(f"New best: XGB={w_xgb:.2f}, GB={w_gb:.2f}, RF={w_rf:.2f} → RMSLE={rmsle:.4f}")
 
 # Apply best weights
 w_xgb, w_gb, w_rf = best_weights
 model_c_preds = w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf
+
+print("-------------- Model C: -----------------")
 print(f"\n BEST WEIGHTS: XGB={w_xgb:.2f}, GB={w_gb:.2f}, RF={w_rf:.2f}")
 print(f"Best validation RMSLE: {best_rmsle:.4f}")
 print(f"Model C - RMSE: {np.sqrt(mean_squared_error(y_test, model_c_preds)):.2f}")
@@ -612,13 +598,25 @@ model_d_rf = RandomForestRegressor(
 model_d_xgb.fit(X, y)
 model_d_gb.fit(X, y)
 model_d_rf.fit(X, y)
+# The model d is prepared to use already with this
 
-    
+######################################################
 # %% Submissions
 ######################################################
 
+
 test_data = pd.read_csv(test_path)
+
+# We have to redo the same data corrections that we did on our train data.
 test_X = test_data.drop(columns="Id")
+
+for col in none_cols:
+    test_X[col] = test_X[col].fillna("None")
+
+test_X["LotFrontage"] = test_X["LotFrontage"].fillna(dataset_df["LotFrontage"].median())
+test_X["GarageYrBlt"] = test_X["GarageYrBlt"].fillna(0)
+test_X["MasVnrArea"] = test_X["MasVnrArea"].fillna(0)
+test_X["Electrical"] = test_X["Electrical"].fillna(dataset_df["Electrical"].mode()[0])
 test_X["MSSubClass"] = test_X["MSSubClass"].astype(str)
 
 test_X_preprocessed = preprocessor.transform(test_X)
@@ -661,7 +659,7 @@ plt.show()
 
 # Random Forest: validation error by number of trees
 rf_tree_results = []
-for n_trees in [50, 100, 200, 300, 500]:
+for n_trees in [50, 100, 200, 300]:
     rf = RandomForestRegressor(
         n_estimators=n_trees,
         max_depth=10,
@@ -755,3 +753,13 @@ plt.ylabel("Validation case")
 plt.tight_layout()
 plt.show()
 
+# Other intresting gaphs:
+  # Actual vs Predicted
+  # Residuals distribution
+  # Residuals vs Predicted
+  # Top largest errors
+  # Feature importance
+  # Permutation importance
+  # Model leaderboard
+  # Random Forest n_estimators curve
+  # Random Forest n_estimators curve
