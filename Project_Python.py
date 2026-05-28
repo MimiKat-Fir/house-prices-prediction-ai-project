@@ -392,7 +392,7 @@ plt.show()
 #############################################################
 # %% Models B (GridSearchCV) Playing with hyperparameters 
 # We'll tune 5 top models with GridSearchCV:
-# XGBoost, Random Forest, Gradient_Boosting, ElasticNet and Linear Regression
+# ElasticNet, Linear Regression, XGBoost, Lasso and Gradient_Boosting
 #############################################################
 
 def rmsle_metric(y_true, y_pred):
@@ -426,15 +426,16 @@ model_b_candidates = {
             random_state=RANDOM_STATE
         ),
         "params": {
-            "alpha": [0.0001, 0.0003, 0.001, 0.003, 0.005, 0.01, 0.03],
-            "l1_ratio": [0.1, 0.3, 0.5, 0.7, 0.9]
+            "alpha": [0.0001, 0.0003, 0.0005, 0.001, 0.003, 0.005, 0.01, 0.03],
+            "l1_ratio": [0.1, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9]
         }
     },
 
     "Linear Regression": {
         "model": LinearRegression(),
         "params": {
-            "fit_intercept": [True, False]
+            "fit_intercept": [True, False],
+            "positive": [False, True]
         }
     },
 
@@ -445,27 +446,24 @@ model_b_candidates = {
             n_jobs=-1
         ),
         "params": {
-            "n_estimators": [300],
+            "n_estimators": [300, 500],
             "max_depth": [2, 3],
-            "learning_rate": [0.03, 0.05],
-            "subsample": [0.8],
+            "learning_rate": [0.02, 0.03, 0.05],
+            "subsample": [0.8, 1.0],
             "colsample_bytree": [0.8],
-            "min_child_weight": [3],
-            "reg_lambda": [5],
+            "min_child_weight": [3, 5],
+            "reg_lambda": [3, 5],
             "reg_alpha": [0.01]
         }
     },
 
-    "Random Forest": {
-        "model": RandomForestRegressor(
-            random_state=RANDOM_STATE,
-            n_jobs=-1
+    "Lasso": {
+        "model": Lasso(
+            max_iter=50000,
+            random_state=RANDOM_STATE
         ),
         "params": {
-            "n_estimators": [300],
-            "max_depth": [10, None],
-            "min_samples_leaf": [2, 4],
-            "max_features": ["sqrt", 0.7]
+            "alpha": [0.0005, 0.001, 0.003, 0.005, 0.01, 0.03, 0.05]
         }
     },
 
@@ -490,7 +488,7 @@ model_b_candidates = {
 model_cache_dir = project_root / "saved_models"
 model_cache_dir.mkdir(exist_ok=True)
 
-model_b_cache_path = model_cache_dir / "model_b_gridsearch_results_log_target_top5_elasticnet_focus.pkl"
+model_b_cache_path = model_cache_dir / "model_b_gridsearch_results_log_target_lasso.pkl"
 
 if model_b_cache_path.exists():
     try:
@@ -590,31 +588,17 @@ print(model_a_df.to_string(index=False))
 # %% Models C (Mean of the best Models)
 #####################################################
 # Get predictions
+preds_c_en = model_b_trained["ElasticNet"].predict(X_test)
+preds_c_lr = model_b_trained["Linear Regression"].predict(X_test)
 preds_c_xgb = model_b_trained["XGBoost"].predict(X_test)
-preds_c_gb = model_b_trained["Gradient_Boosting"].predict(X_test)
-preds_c_rf = model_b_trained["Random Forest"].predict(X_test)
 
-# Find best weights on validation set
-best_rmsle = float('inf')
-best_weights = None
-
-for w_xgb in np.arange(0, 1.01, 0.01):
-    for w_gb in np.arange(0, 1.01 - w_xgb, 0.01):
-        w_rf = 1 - w_xgb - w_gb
-        if w_rf < 0: continue
-        weighted_pred = w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf
-        rmsle = np.sqrt(mean_squared_error(y_test, weighted_pred))
-        if rmsle < best_rmsle:
-            best_rmsle = rmsle
-            best_weights = (w_xgb, w_gb, w_rf)
-
-# Apply best weights
-w_xgb, w_gb, w_rf = best_weights
-model_c_preds = w_xgb * preds_c_xgb + w_gb * preds_c_gb + w_rf * preds_c_rf
+# Apply fixed weights
+model_c_preds = 0.4 * preds_c_en + 0.3 * preds_c_lr + 0.3 * preds_c_xgb
+model_c_rmsle = np.sqrt(mean_squared_error(y_test, model_c_preds))
 
 print("-------------- Model C: -----------------")
-print(f"\n BEST WEIGHTS: XGB={w_xgb:.2f}, GB={w_gb:.2f}, RF={w_rf:.2f}")
-print(f"Best validation RMSLE: {best_rmsle:.4f}")
+print("\n WEIGHTS: ElasticNet=0.40, Linear Regression=0.30, XGB=0.30")
+print(f"Validation RMSLE: {model_c_rmsle:.4f}")
 print(f"Model C - RMSE: {np.sqrt(mean_squared_error(to_price(y_test), to_price(model_c_preds))):.2f}")
 
 ########################################################
@@ -624,9 +608,21 @@ print(f"Model C - RMSE: {np.sqrt(mean_squared_error(to_price(y_test), to_price(m
 # Convert df to dictionary so we can extract bestparams easier
 model_params = dict(zip(model_b_df["model"], model_b_df["best_params"]))
 
+best_params_en = model_params["ElasticNet"]
+best_params_lr = model_params["Linear Regression"]
 best_params_xgb = model_params["XGBoost"]
-best_params_rf = model_params["Random Forest"]
-best_params_gb = model_params["Gradient_Boosting"]
+
+# "ElasticNet"
+model_d_en = ElasticNet(
+    max_iter=50000,
+    random_state=RANDOM_STATE,
+    **best_params_en
+)
+
+# "Linear Regression"
+model_d_lr = LinearRegression(
+    **best_params_lr
+)
 
 # "XGBoost"
 model_d_xgb = xgb.XGBRegressor(
@@ -635,21 +631,10 @@ model_d_xgb = xgb.XGBRegressor(
     n_jobs=-1,
     **best_params_xgb
 )
-# "Gradient_Boosting"
-model_d_gb = GradientBoostingRegressor(
-    random_state=RANDOM_STATE,
-    **best_params_gb
-)
-# "Random Forest"
-model_d_rf = RandomForestRegressor(
-    random_state=RANDOM_STATE,
-    n_jobs=-1,
-    **best_params_rf
-)
 
+model_d_en.fit(X, y)
+model_d_lr.fit(X, y)
 model_d_xgb.fit(X, y)
-model_d_gb.fit(X, y)
-model_d_rf.fit(X, y)
 # The model d is prepared to use already with this
 
 ######################################################
@@ -675,19 +660,19 @@ test_X_preprocessed = preprocessor.transform(test_X)
 test_X_scaled = scaler.transform(test_X_preprocessed)
 
 # Predict with Model D
-preds_d_gb = model_d_gb.predict(test_X_scaled)
+preds_d_en = model_d_en.predict(test_X_scaled)
+preds_d_lr = model_d_lr.predict(test_X_scaled)
 preds_d_xgb = model_d_xgb.predict(test_X_scaled)
-preds_d_rf = model_d_rf.predict(test_X_scaled)
 
 # Use the best weights found on model C
-model_d_pred = (0.6 * preds_d_xgb) + (0.3 * preds_d_gb) + (0.1 * preds_d_rf)
+model_d_pred = (0.4 * preds_d_en) + (0.3 * preds_d_lr) + (0.3 * preds_d_xgb)
 model_d_pred = to_price(model_d_pred)
 
 submission = pd.DataFrame({
     "Id": test_data["Id"],
     "SalePrice": model_d_pred
 })
-submission.to_csv(project_root / "submissions" / "submission_model_d2_different_hyperparams.csv", index=False)
+submission.to_csv(project_root / "submissions" / "submission_model_d2_new_model.csv", index=False)
 
 ########################################################
 # %% Graphs
